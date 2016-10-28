@@ -1,6 +1,9 @@
 {-# LANGUAGE FlexibleInstances, UndecidableInstances, GeneralizedNewtypeDeriving #-}
 module Ring where
 
+import Data.Foldable
+import Data.Monoid
+
 
 class Semiring r where
     zero :: r
@@ -47,6 +50,13 @@ instance (Semiring r) => Monoid (RProd r) where
     mempty = RProd one
     (RProd a) `mappend` (RProd b) = RProd (a <.> b)
 
+sumR :: (Foldable f, Semiring r) => f r -> r
+sumR xs = let (RSum x) = foldMap RSum xs in x
+
+productR :: (Foldable f, Semiring r) => f r -> r
+productR xs = let (RProd x) = foldMap RProd xs in x
+
+--------------------------------------------------------------------------------
 
 class (Semiring r) => Ring r where
     addinv :: r -> r

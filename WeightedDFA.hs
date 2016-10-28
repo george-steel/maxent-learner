@@ -43,12 +43,12 @@ pruneUnreachable dfa = WDFA (array arrbound (fmap newdfa (range arrbound)))
             reached :: STUArray s l Bool <- newArray lbound False
             let dfs :: l -> ST s ()
                 dfs n = do
-                writeArray reached n True
-                forM_ (range cbound) $ \c -> do
-                    let n' = advanceState dfa n c
-                    seen <- readArray reached n'
-                    when (not seen) (dfs n')
-                return ()
+                    writeArray reached n True
+                    forM_ (range cbound) $ \c -> do
+                        let n' = advanceState dfa n c
+                        seen <- readArray reached n'
+                        when (not seen) (dfs n')
+                    return ()
             dfs (fst lbound)
             return reached
         keepstates :: [l] = filter (reachable!) (range lbound)
@@ -116,4 +116,17 @@ countngrams sbound classes = pruneUnreachable (WDFA arr)
                 isfinal = (testBit s (n-2)) && (c `elem` (cls!(n)))
                 w = if isfinal then 1 else 0
             return ((s,c),(ns,w))
+
+initialWeightArray :: (Ix l, Ix sigma, Semiring w) => WDFA l sigma w -> Array l w
+initialWeightArray dfa = array sbound ((fst sbound, one) : fmap (\s -> (s,zero)) (tail (range sbound)))
+    where sbound = labelBounds dfa
+
+stepweights :: (Ix l, Ix sigma, Semiring w) => WDFA l sigma w -> Array l w -> Array l w
+stepweights dfa@(WDFA arr) prev = accumArray (<+>) zero (sbound) (fmap pathweight (range (bounds arr)))
+    where
+        sbound = labelBounds dfa
+        pathweight (s,c) = let (ns,w) = arr!(s,c) in (ns, (prev!s) <.> w)
+
+reverseDFA :: (Ix l, Ix sigma) => WDFA l sigma w -> Array (l,sigma) [(l,w)]
+reverseDFA (WDFA arr) = accumArray (flip (:)) [] (bounds arr) (fmap (\((s,c),(s',w)) -> ((s',c),(s,w))) (assocs arr))
 
