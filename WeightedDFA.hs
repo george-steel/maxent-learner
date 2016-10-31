@@ -12,6 +12,7 @@ import Data.Array.Unboxed ()
 import Data.Ix
 import Data.Tuple
 import Data.Bits
+import Data.Monoid
 import Ring
 
 
@@ -94,7 +95,7 @@ transduceR dfa@(WDFA arr) cs = foldl (<.>) one $ evalState (mapM trans cs) (fst 
         tf c s = swap (arr!(s,c))
 
 -- counts class-based n-grams. takes in a sequences of character classes to match and counts the number of occurrences. 
-countngrams :: forall sigma . (Ix sigma) => (sigma, sigma) -> [[sigma]] -> WDFA Int sigma Int
+countngrams :: forall sigma . (Ix sigma) => (sigma, sigma) -> [[sigma]] -> WDFA Int sigma (Sum Int)
 countngrams sbound classes = pruneUnreachable (WDFA arr)
     where
         n = length classes
@@ -104,7 +105,7 @@ countngrams sbound classes = pruneUnreachable (WDFA arr)
         unBinary [] = 0
         unBinary (True:x) = 1 + 2 * (unBinary x)
         unBinary (False:x) = 2 * (unBinary x)
-        arr :: Array (Int, sigma) (Int, Int)
+        arr :: Array (Int, sigma) (Int, Sum Int)
         arr = array ((0, fst sbound), (2^(n-1) - 1, snd sbound)) $ do
             s <- states
             c <- range sbound
@@ -114,7 +115,7 @@ countngrams sbound classes = pruneUnreachable (WDFA arr)
                     guard (c `elem` (cls!(b)))
                     return (2^(b-1))
                 isfinal = (testBit s (n-2)) && (c `elem` (cls!(n)))
-                w = if isfinal then 1 else 0
+                w = Sum (if isfinal then 1 else 0)
             return ((s,c),(ns,w))
 
 initialWeightArray :: (Ix l, Ix sigma, Semiring w) => WDFA l sigma w -> Array l w
