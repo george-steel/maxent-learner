@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, ExplicitForAll #-}
+{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, UndecidableInstances #-}
 
 module MaxentGrammar where
 
@@ -11,7 +11,7 @@ import Data.Array.Unboxed
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Trans.Class
-import Control.Arrow hiding ((<+>))
+import Control.Arrow
 import System.Random
 import Data.List
 import Data.Monoid
@@ -45,26 +45,27 @@ fromMC = Vec . fmap fromIntegral . getMC
 
 -- expectation semiring as described by Eisner
 -- holds total probability of event and the events contribution to an expectation vector
-data Expectation = Exp { prob :: Double
-                       , exps :: Vec }
+data Expectation v = Exp { prob :: Double
+                         , exps :: v }
                    deriving (Eq, Show)
 
-instance Additive Expectation where
+-- combine exclusive events
+instance (RingModule Double v) => Additive (Expectation v) where
     zero = Exp 0 zero
-    -- combine exclusive events
-    (Exp p1 v1) <+> (Exp p2 v2) = Exp (p1 + p2) (v1 <+> v2)
-instance Semiring Expectation where
+    (Exp p1 v1) ⊕ (Exp p2 v2) = Exp (p1 + p2) (v1 ⊕ v2)
+
+-- intersect independent events or combine event with conditional probability
+instance (RingModule Double v) => Semiring (Expectation v) where
     one = Exp 1 zero
-    -- intersect independent events or combine event with conditional probability
-    (Exp p1 v1) <.> (Exp p2 v2) = Exp (p1 * p2) ((p1 .> v2) <+> (p2 .> v1))
+    (Exp p1 v1) ⊗ (Exp p2 v2) = Exp (p1 * p2) ((p1 ⊙ v2) ⊕ (p2 ⊙ v1))
 
 -- expectation conditional on the event reperesented occuring
-normalizeExp :: Expectation -> Vec
-normalizeExp (Exp p vs) = (1/p) .> vs
+normalizeExp :: (RingModule Double v) => Expectation v -> v
+normalizeExp (Exp p vs) = (1/p) ⊙ vs
 
 -- given maxent weights, turn count into their expectations
-weightMC :: Vec -> Multicount -> Expectation
-weightMC weights counts = Exp p (p .> fromMC counts)
+weightMC :: Vec -> Multicount -> Expectation Vec
+weightMC weights counts = Exp p (p ⊙ fromMC counts)
     where p = exp . negate $ innerProd weights (fromMC counts)
 
 
@@ -73,7 +74,7 @@ weightMC weights counts = Exp p (p .> fromMC counts)
 -- aliases for various roles of transducer
 type MaxentViolationCounter sigma = WDFA Int sigma Multicount
 type MaxentProbTransducer sigma = WDFA Int sigma Double
-type MaxentExpTransducer sigma = WDFA Int sigma Expectation
+type MaxentExpTransducer sigma = WDFA Int sigma (Expectation Vec)
 
 
 -- add weights to a counting transducer to get expectation transducer
@@ -92,7 +93,7 @@ maxentTotals dfa = fmap sum (iterate (stepweights dfa) (initialWeightArray dfa))
 
 -- get expectation vector of gonstraints over the probability distribution defined by the transducer
 -- returns a corecursive list of vectors for each length of string
-expectedViolations :: (Ix sigma) => MaxentExpTransducer sigma -> [(Double, Vec)]
+expectedViolations :: (RingModule Double v, Ix sigma) => WDFA Int sigma (Expectation v) -> [(Double, v)]
 expectedViolations dfa = fmap ((prob &&& normalizeExp) . sumR) (iterate (stepweights dfa) (initialWeightArray dfa))
 
 
@@ -109,7 +110,7 @@ sortLexicon wfs = Lex (sum . fmap fst $ mwf) mwf
     where mwf = M.unionsWith (\(nx,xs) (ny,ys) -> (nx+ny, M.unionWith (+) xs ys)) [length w =: (f, w =: f) | (w,f) <- wfs]
 
 -- count totasl violations of each constraint and return totals (and the total number of words) for each length
-observedViolations :: (Ord sigma, Ix sigma) => MaxentViolationCounter sigma -> Lexicon sigma -> M.Map Int (Int, [Int])
+observedViolations :: (Ix sigma) => MaxentViolationCounter sigma -> Lexicon sigma -> M.Map Int (Int, [Int])
 observedViolations dfa (Lex _ wfs) = fmap totalviols wfs
     where
         viols (w,n) =  fmap (n *) . getMC . transduce dfa $ w
@@ -117,40 +118,38 @@ observedViolations dfa (Lex _ wfs) = fmap totalviols wfs
 
 
 
-
-
 -- get log probability of lexicon given total violations (taken as a parameter for caching), a violation counter, and a set of weights.
-lexLogProb :: (Ord sigma, Ix sigma) =>  M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> Double
+lexLogProb :: (Ix sigma) =>  M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> Double
 lexLogProb viols ctr weights = sum . fmap logProb . M.assocs $ viols
     where
         pdfa = dropCounts (weightConstraints ctr weights)
         probs = fmap log (maxentTotals pdfa)
         logProb :: (Int, (Int, [Int])) -> Double
-        logProb (k, (n, vs)) = (n .> (probs !! k)) + innerProd (fromInts vs) weights
+        logProb (k, (n, vs)) = (n ⊙ (probs !! k)) + innerProd (fromInts vs) weights
 
 -- same as logProb, but also returns its derivative at the weight vector specified.
-lexLogProbTotalDeriv :: (Ord sigma, Ix sigma) =>  M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> (Double, Vec)
-lexLogProbTotalDeriv viols ctr weights = (sum (fmap logProb (M.assocs viols)), (1 / nwords) .> sumR (fmap dLogProb (M.assocs viols)))
+lexLogProbTotalDeriv :: (Ix sigma) =>  M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> (Double, Vec)
+lexLogProbTotalDeriv viols ctr weights = (sum (fmap logProb (M.assocs viols)), (1 / nwords) ⊙ sumR (fmap dLogProb (M.assocs viols)))
     where
         nwords :: Double = fromIntegral (sum (fmap fst viols))
         edfa = weightConstraints ctr weights
         exps = expectedViolations edfa
         logProb :: (Int, (Int, [Int])) -> Double
-        logProb (k, (n, vs)) = (n .> log (fst (exps !! k))) + innerProd (fromInts vs) weights
+        logProb (k, (n, vs)) = (n ⊙ log (fst (exps !! k))) + innerProd (fromInts vs) weights
         dLogProb :: (Int, (Int, [Int])) -> Vec
-        dLogProb (k, (n, vs)) = fromInts vs <-> (n .> snd (exps !! k))
+        dLogProb (k, (n, vs)) = fromInts vs ⊖ (n ⊙ snd (exps !! k))
 
-dotWeights :: Vec -> Expectation -> Expectation
-dotWeights ws (Exp p es) = Exp p (Vec [innerProd es ws])
+dotWeights :: Vec -> Expectation Vec-> Expectation Double
+dotWeights ws (Exp p es) = Exp p (innerProd es ws)
 
-lexLogProbPartialDeriv :: (Ord sigma, Ix sigma) => M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> Vec -> Double
+lexLogProbPartialDeriv :: (Ix sigma) => M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> Vec -> Double
 lexLogProbPartialDeriv viols ctr weights dir = (sum . fmap dLogProb . M.assocs $ viols) / nwords
     where
         nwords = fromIntegral (sum (fmap fst viols))
         edfa = mapweights (dotWeights dir) (weightConstraints ctr weights)
         exps = expectedViolations edfa
         dLogProb :: (Int, (Int, [Int])) -> Double
-        dLogProb (k, (n, vs)) = innerProd dir (fromInts vs) - (n .> (head . coords . snd $ exps !! k))
+        dLogProb (k, (n, vs)) = innerProd dir (fromInts vs) - (n ⊙ snd (exps !! k))
 
 
 
@@ -194,13 +193,13 @@ sampleWord dfa n = do
 
         maxentPrefixes = take (n + 1) (iterate (stepweights dfa) (initialWeightArray dfa))
         maxentArray :: UArray (Int,Int) Double
-        maxentArray = array ((0,smin), (n,smax)) . join . snd . mapAccumL (\n a -> (n+1, fmap (\(x,p)->((n,x),p)) (assocs a))) 0 $ maxentPrefixes
+        maxentArray = array ((0,smin), (n,smax)) . join . snd . mapAccumL (\k a -> (n+1, fmap (\(x,p)->((k,x),p)) (assocs a))) 0 $ maxentPrefixes
 
         backDist :: (Int, Int) -> Cdf (sigma, Int)
         backDist (k, s) = massToCdf $ do
             c <- range (segBounds dfa)
             (s', w) <- backnfa!(s,c)
-            return ((c,s'), w * (maxentArray!(n-1,s')))
+            return ((c,s'), w * (maxentArray!(k-1,s')))
         -- memoized version
         backDists :: Array (Int, Int) (Cdf (sigma, Int))
         backDists = array ((1,smin), (n,smax)) (fmap (id &&& backDist) (range ((1,smin), (n,smax))))

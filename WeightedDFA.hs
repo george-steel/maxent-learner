@@ -63,7 +63,7 @@ pruneUnreachable dfa = WDFA (array arrbound (fmap newdfa (range arrbound)))
             return reached
         keepstates :: [l] = filter (reachable!) (range lbound)
         nbound = (1,length keepstates)
-        oldlabels :: Array Int l = listArray nbound keepstates 
+        oldlabels :: Array Int l = listArray nbound keepstates
         newlabels :: Array l Int = array lbound (zip keepstates (range nbound))
         arrbound = timesbound nbound cbound
         newdfa (s,c) = let (t,w) = transition dfa (oldlabels!s) c in ((s,c), (newlabels!t, w))
@@ -103,7 +103,7 @@ transduce dfa@(WDFA arr) cs = mconcat $ evalState (mapM trans cs) (fst (labelBou
 
 -- transduce a string of segments where and output the product of the weights (as a Ring)
 transduceR :: (Ix l, Ix sigma, Semiring w) => WDFA l sigma w -> [sigma] -> w
-transduceR dfa@(WDFA arr) cs = foldl (<.>) one $ evalState (mapM trans cs) (fst (labelBounds dfa))
+transduceR dfa@(WDFA arr) cs = foldl (⊗) one $ evalState (mapM trans cs) (fst (labelBounds dfa))
     where
         trans = state . tf
         tf c s = swap (arr!(s,c))
@@ -117,9 +117,9 @@ countngrams sbound classes = pruneUnreachable (WDFA arr)
         cls :: Array Int [sigma]
         cls = listArray (1,n) classes
         states = range (0, 2^(n-1) - 1)
-        unBinary [] = 0
-        unBinary (True:x) = 1 + 2 * (unBinary x)
-        unBinary (False:x) = 2 * (unBinary x)
+        --unBinary [] = 0
+        --unBinary (True:x) = 1 + 2 * (unBinary x)
+        --unBinary (False:x) = 2 * (unBinary x)
         arr :: Array (Int, sigma) (Int, Sum Int)
         arr = array ((0, fst sbound), (2^(n-1) - 1, snd sbound)) $ do
             s <- states
@@ -139,10 +139,10 @@ countngrams sbound classes = pruneUnreachable (WDFA arr)
 -- given an array mapping states to weights (e.g, a maxent distribution),
 -- gives a new distribution after transducing an additional character
 stepweights :: (Ix l, Ix sigma, Semiring w) => WDFA l sigma w -> Array l w -> Array l w
-stepweights dfa@(WDFA arr) prev = accumArray (<+>) zero (sbound) (fmap pathweight (range (bounds arr)))
+stepweights dfa@(WDFA arr) prev = accumArray (⊕) zero (sbound) (fmap pathweight (range (bounds arr)))
     where
         sbound = labelBounds dfa
-        pathweight (s,c) = let (ns,w) = arr!(s,c) in (ns, (prev!s) <.> w)
+        pathweight (s,c) = let (ns,w) = arr!(s,c) in (ns, (prev!s) ⊗ w)
 
 -- gives an array from states to weights with 1 in the first position and 0 elsewhere
 initialWeightArray :: (Ix l, Ix sigma, Semiring w) => WDFA l sigma w -> Array l w
@@ -152,4 +152,3 @@ initialWeightArray dfa = array sbound ((fst sbound, one) : fmap (\s -> (s,zero))
 -- converts to an NFA with all the arrows reversed
 reverseDFA :: (Ix l, Ix sigma) => WDFA l sigma w -> Array (l,sigma) [(l,w)]
 reverseDFA (WDFA arr) = accumArray (flip (:)) [] (bounds arr) (fmap (\((s,c),(s',w)) -> ((s',c),(s,w))) (assocs arr))
-
