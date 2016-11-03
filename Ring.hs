@@ -32,6 +32,8 @@ class (Semiring r, Subtractive r) => Ring r
 class (Ring r, Subtractive v) => RingModule r v where
     (⊙) :: r -> v -> v
 
+instance (Ring r) => RingModule r r where
+    (⊙) = (⊗)
 --------------------------------------------------------------------------------
 
 -- trivial ring
@@ -79,7 +81,8 @@ instance (Subtractive r, Subtractive s) => Subtractive (r,s) where
     addinv (a,b) = (addinv a, addinv b)
     (a,b) ⊖ (c,d) = (a ⊖ c, b ⊖ d)
 instance (Ring r, Ring s) => Ring (r,s)
-
+instance (RingModule r v, RingModule r w) => RingModule r (v,w) where
+    a ⊙ (b,c) = (a ⊙ b, a ⊙ c)
 
 
 --------------------------------------------------------------------------------
@@ -105,8 +108,6 @@ productR xs = let (RProd x) = foldMap RProd xs in x
 
 --------------------------------------------------------------------------------
 
-instance (Ring r) => RingModule r r where
-    (⊙) = (⊗)
 
 instance RingModule Int Double where
     x ⊙ y = fromIntegral x * y
