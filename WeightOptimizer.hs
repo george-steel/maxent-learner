@@ -12,7 +12,7 @@ import Debug.Trace
 -- "An Introduction to the Conjugate Gradient Method Without the Agonizing Pain"
 
 
--- tuning parameters for numerical approximation
+-- length of starting guess for line search
 rfInitSigma :: Double
 rfInitSigma = 0.05
 
@@ -48,21 +48,28 @@ regulaFalsiSearch epsilon f' xinit sdir = if (dxinit > 0) then xinit else pos (r
 -- f' calculates direcrtional derivatives
 conjugateGradientSearch :: (Double, Double) -> (Vec -> (Double, Vec)) -> (Vec -> Vec -> Double) -> Vec -> Vec
 conjugateGradientSearch (e1, e2) fstar f' start = cjs dims (start ⊕ Vec [2*e1]) zero zero start
-    where
+    where                                       -- fake last step triggers restart and aviods stopping condition
         dims = length (coords start)
         cjs :: Int -> Vec -> Vec -> Vec -> Vec -> Vec
-        cjs bal oldx olddir oldgrad x = if (normVec (oldx ⊖ x) < e1 || normVec (x ⊖ newx) < e1) then newx else cjs nbal x sdir grad newx
+        cjs bal oldx olddir oldgrad x = if normVec (oldx ⊖ x) < e1 || normVec (x ⊖ newx) < e1 -- two steps small enough
+                                        then newx
+                                        else cjs nbal x sdir grad newx
             where
                 (v,grad) = fstar x
-                beta' = (innerProd grad (oldgrad ⊖ grad) / innerProd oldgrad oldgrad) --Polak-Ribière
+                beta' = innerProd grad (oldgrad ⊖ grad) / innerProd oldgrad oldgrad --Polak-Ribière
                 (beta, nbal) = if (bal >= dims || beta' <= 0) then (0,0) else (beta', bal + 1)
                 sdir = (addinv grad) ⊕ (beta ⊙ olddir)
                 newx = traceShow (x,v) (regulaFalsiSearch e2 f' x sdir)
 
 
+--------------------------------------------------------------------------------
+
+-- line search specialized for lexLogProb
 llpLineSearch :: (Ix sigma) => M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> Vec -> Vec
 llpLineSearch viols ctr weights sdir = regulaFalsiSearch 0.01 (lexLogProbPartialDeriv viols ctr) weights sdir
 
+-- calculate weights to maximize probability of lexicon.
+-- takes starting position of search which MUST have the correct number of entries (do not use `zero`)
 llpOptimizeWeights :: (Ix sigma) => M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> Vec
 llpOptimizeWeights viols ctr initweights = conjugateGradientSearch (0.01, 0.005)
                                                                    (lexLogProbTotalDeriv viols ctr)

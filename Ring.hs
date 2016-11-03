@@ -1,5 +1,14 @@
 {-# LANGUAGE FlexibleInstances, UndecidableInstances, GeneralizedNewtypeDeriving, MultiParamTypeClasses #-}
-module Ring where
+module Ring ( Additive(..)
+            , Subtractive(..)
+            , Semiring(..)
+            , Ring
+            , RingModule(..)
+            , RSum, RProd
+            , sumR, productR
+            , Vec(..), fromInts
+            , innerProd, normVec, normalizeVec
+            ) where
 
 --import Data.Foldable
 --import Data.Monoid
@@ -32,6 +41,7 @@ class (Semiring r, Subtractive r) => Ring r
 class (Ring r, Subtractive v) => RingModule r v where
     (⊙) :: r -> v -> v
 
+-- every Ring is a module over itself
 instance (Ring r) => RingModule r r where
     (⊙) = (⊗)
 --------------------------------------------------------------------------------
@@ -108,9 +118,10 @@ productR xs = let (RProd x) = foldMap RProd xs in x
 
 --------------------------------------------------------------------------------
 
-
+-- Double is a module over Int, saves a lot of fromIntegral noise
 instance RingModule Int Double where
     x ⊙ y = fromIntegral x * y
+
 
 addThese :: (Num a) => These a a -> a
 addThese (This a) = a
