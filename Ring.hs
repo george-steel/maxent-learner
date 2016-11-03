@@ -8,6 +8,7 @@ module Ring ( Additive(..)
             , sumR, productR
             , Vec(..), fromInts
             , innerProd, normVec, normalizeVec
+            , addThese
             ) where
 
 --import Data.Foldable
