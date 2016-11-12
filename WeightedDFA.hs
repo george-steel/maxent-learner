@@ -92,7 +92,8 @@ rawIntersection f dfa1 dfa2 = if cbound == cbound2 then WDFA (array arrbound (fm
 dfaProduct :: (Ix l1, Ix l2, Ix sigma) => (w1 -> w2 -> w3) -> WDFA l1 sigma w1 -> WDFA l2 sigma w2 -> WDFA Int sigma w3
 dfaProduct f dfa1 dfa2 = pruneUnreachable (rawIntersection f dfa1 dfa2)
 
-
+nildfa :: (Ix sigma, Monoid w) => (sigma,sigma) -> WDFA Int sigma w
+nildfa (lsb,usb) = WDFA (array ((1,lsb),(1,usb)) (fmap (\c -> ((1,c),(1,mempty))) (range (lsb,usb))))
 
 -- transduce a string of segments where and output the product of the weights (as a Monoid)
 transduce :: (Ix l, Ix sigma, Monoid w) => WDFA l sigma w -> [sigma] -> w
@@ -117,9 +118,6 @@ countngrams sbound classes = pruneUnreachable (WDFA arr)
         cls :: Array Int [sigma]
         cls = listArray (1,n) classes
         states = range (0, 2^(n-1) - 1)
-        --unBinary [] = 0
-        --unBinary (True:x) = 1 + 2 * (unBinary x)
-        --unBinary (False:x) = 2 * (unBinary x)
         arr :: Array (Int, sigma) (Int, Sum Int)
         arr = array ((0, fst sbound), (2^(n-1) - 1, snd sbound)) $ do
             s <- states
@@ -127,13 +125,34 @@ countngrams sbound classes = pruneUnreachable (WDFA arr)
             let ns = sum $ do
                     b <- range (1, n-1)
                     guard (b == 1 || testBit s (b-2))
-                    guard (c `elem` (cls!(b)))
+                    guard (c `elem` (cls!b))
                     return (2^(b-1))
-                isfinal = (testBit s (n-2)) && (c `elem` (cls!(n)))
+                isfinal = (n == 1 || testBit s (n-2)) && (c `elem` (cls!n))
                 w = Sum (if isfinal then 1 else 0)
             return ((s,c),(ns,w))
 
-
+gateLeftContext :: forall sigma w . (Ix sigma, Monoid w) => [[sigma]] -> WDFA Int sigma w -> WDFA Int sigma w
+gateLeftContext classes olddfa@(WDFA oldarr) = pruneUnreachable (WDFA mergedarr)
+    where
+        sbound = segBounds olddfa
+        n = length classes
+        (oldstart, oldend) = labelBounds olddfa
+        offset = oldstart - 2^(n-1)
+        cls :: Array Int [sigma]
+        cls = listArray (1,n) classes
+        states = range (0, 2^(n-1) - 1)
+        mergedarr :: Array (Int, sigma) (Int, w)
+        mergedarr = array ((offset, fst sbound), (oldend, snd sbound)) $ assocs oldarr ++ do
+            s <- states
+            c <- range sbound
+            let ns = sum $ do
+                    b <- range (1, n-1)
+                    guard (b == 1 || testBit s (b-2))
+                    guard (c `elem` (cls!b))
+                    return (2^(b-1))
+                isfinal = (n == 1 || testBit s (n-2)) && (c `elem` (cls!n))
+                ns' = if isfinal then oldstart else (ns + offset)
+            return ((offset + s,c),(ns',mempty))
 
 -- used for statistical calculations over an entire dfa with ring weights (e.g. probabilities)
 -- given an array mapping states to weights (e.g, a maxent distribution),

@@ -1,8 +1,10 @@
-import MaxentGrammar
+{-# LANGUAGE TemplateHaskell #-}
 import Ring
 import WeightedDFA
 import MaxentGrammar
 import WeightOptimizer
+import PhonotacticGrammar
+
 
 import Control.Monad
 import Control.Monad.State
@@ -10,7 +12,16 @@ import Control.Monad.Trans.Class
 import System.Random
 import Data.List
 import Data.Monoid
+import Data.Maybe
 import qualified Data.Map as M
+
+import Data.FileEmbed
+
+ftcsv :: String
+ftcsv = $(embedStringFile "./features-char.csv")
+
+ipaft :: FeatureTable Char
+ipaft = fromJust (csvToFeatureTable head ftcsv)
 
 abcLex = sortLexicon [ ("abc", 100)
                      , ("abcd", 100)

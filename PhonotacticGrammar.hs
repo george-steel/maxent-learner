@@ -3,18 +3,21 @@ module PhonotacticGrammar where
 
 import Ring
 import MaxentGrammar
+import WeightedDFA
 import Text.CSV
 import Data.Array.IArray
 import Data.Maybe
 import Data.Tuple
+import Data.List
+import Data.Monoid
 import Control.Monad
 import qualified Data.Map.Lazy as M
 
 
-
+-- enumeration for feature states (can be +,-,0)
 data FeatureState = FOff | FPlus | FMinus deriving (Enum, Eq, Ord, Read, Show)
 
-
+-- using integer indexes to a lookup table to represent segments
 newtype SegRef = Seg Int deriving (Eq, Ord, Read, Show, Ix)
 
 data FeatureTable sigma = FeatureTable { featTable :: Array (SegRef,Int) FeatureState
@@ -80,12 +83,26 @@ allFeatures ft = elems (featNames ft)
 
 
 
-newtype NaturalClass = NClass [(FeatureState, String)] deriving (Eq, Ord, Read, Show)
+data NaturalClass = NClass { isInverted ::Bool
+                           , featureList :: [(FeatureState, String)]
+                           } deriving (Eq, Ord, Read, Show)
+
+showClass :: NaturalClass -> String
+showClass (NClass isNegated feats) = (if isNegated then "[¬ " else "[") ++ unwords (fmap showfeat feats) ++ "]"
+    where showfeat (fs, fn) = (case fs of
+                                    FPlus -> "+"
+                                    FMinus -> "−"
+                                    FOff -> "0")
+                              ++ fn
+
+xor :: Bool -> Bool -> Bool
+xor False p = p
+xor True p = not p
 
 classToSeglist :: FeatureTable sigma -> NaturalClass -> [SegRef]
-classToSeglist ft (NClass cls) = do
+classToSeglist ft (NClass isNegated cls) = do
         c <- range (srBounds ft)
-        guard (and [ftlook ft c fi == fs | (fs,fi) <- icls])
+        guard (isNegated `xor` and [ftlook ft c fi == fs | (fs,fi) <- icls])
         return c
     where icls = do
             (s,fn) <- cls
@@ -93,7 +110,112 @@ classToSeglist ft (NClass cls) = do
             return (s,fi)
 
 
-type NGram = [(Bool, NaturalClass)]
+type NGram = [NaturalClass]
 data Glob = Glob { leftContexts :: [NGram]
                  , countedSequence :: NGram }
                  deriving (Eq, Read, Show)
+
+showGlob :: Glob -> String
+showGlob (Glob ctxs cs) = intercalate "…" (fmap (>>= showClass) (ctxs ++ [cs]))
+
+countGlobMatches :: FeatureTable sigma -> Glob -> WDFA Int SegRef (Sum Int)
+countGlobMatches ft (Glob ctxs cs) = buildDFA ictxs
+    where
+        ictxs = fmap (fmap (classToSeglist ft)) ctxs
+        ics = fmap (classToSeglist ft) cs
+        buildDFA gs = foldr gateLeftContext (countngrams (srBounds ft) ics) gs
+
+
+
+data ConstraintSet = ConstraintSet { constraintList :: [Glob]
+                                   , violationCounter :: MaxentViolationCounter SegRef }
+                                   deriving (Show)
+
+emptyConstraintSet :: FeatureTable sigma -> ConstraintSet
+emptyConstraintSet ft = ConstraintSet [] (nildfa (srBounds ft))
+
+consConstraint :: FeatureTable sigma -> Glob -> ConstraintSet -> ConstraintSet
+consConstraint ft g cs = ConstraintSet (g : constraintList cs) (dfaProduct consMC (countGlobMatches ft g) (violationCounter cs))
+
+
+
+
+ngrams  :: Int -> [a] -> [[a]]
+ngrams  0  _       = [[]]
+ngrams  _  []      = []
+ngrams  n  (x:xs)  = fmap (x:) (ngrams (n-1) xs) ++ ngrams n xs
+
+classesByGenerality :: FeatureTable sigma -> Int -> [(Int, NaturalClass)]
+classesByGenerality ft maxfeats = fmap (\((ns, _), c) -> (ns,c)) (M.assocs cls)
+    where
+        cls = M.fromListWith const $ do
+            isInv <- [False,True]
+            nf <- range (1, maxfeats)
+            fs <- ngrams nf (elems (featNames ft))
+            c <- fmap (NClass isInv) . forM fs $ \f -> [(FPlus,f), (FMinus,f)]
+            let cs = classToSeglist ft c
+            let ns = length cs
+            guard (ns /= 0)
+            return ((negate ns, cs), c)
+
+
+partitionLength :: Int -> Int -> [[Int]]
+partitionLength n 0 = return [n]
+partitionLength 0 _ = return []
+partitionLength 1 _ = return [1]
+partitionLength n b = do
+    k <- range (1,n)
+    ks <- partitionLength (n-k) (b-1)
+    return (k:ks)
+
+multiTake :: [Int] -> [a] -> [[a]]
+multiTake [] _ = []
+multiTake _ [] = []
+multiTake (n:ns) xs = take n xs : multiTake ns (drop n xs)
+
+
+-- UG functions to generate list of constraint candidates
+
+localTrigramGlobs :: [(Int, NaturalClass)] -> [NaturalClass] -> [Glob]
+localTrigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubles ++ tripples
+    where
+        singles = do
+            (w,cls) <- classes
+            let g = Glob [] [cls]
+            guard (not (isInverted cls))
+            return ((1,w),g)
+        doubles = do
+            (w1,cls1) <- classes
+            (w2,cls2) <- classes
+            guard (not (isInverted cls1 && isInverted cls2))
+            return ((2,w1+w2), Glob [] [cls1,cls2])
+        tripples = do
+            (w1,cls1) <- classes
+            (w2,cls2) <- classes
+            (w,cls3) <- case () of
+                 () | cls1 `elem` coreClasses -> do
+                        (w3,cls3') <- classes
+                        guard (not (isInverted cls2 && isInverted cls3'))
+                        return (w2+w3, cls3')
+                    | cls2 `elem` coreClasses -> do
+                        (w3,cls3') <- classes
+                        guard (not (isInverted cls1 && isInverted cls3'))
+                        return (w1+w3, cls3')
+                    | otherwise -> do
+                        cls3' <- coreClasses
+                        guard (not (isInverted cls1 && isInverted cls2))
+                        return (w1+w2, cls3')
+            return ((3,w), Glob [] [cls1,cls2,cls3])
+
+nonlocalTrigramGlobs :: [(Int, NaturalClass)] -> [(Int, NaturalClass)] -> [Glob]
+nonlocalTrigramGlobs classes extraclasses = []
+
+nonlocalNGrams :: Int -> Int -> [(Int, NaturalClass)] -> [Glob]
+nonlocalNGrams maxStars maxClasses candidateClasses = fmap snd . sortOn fst $ do
+    nc <- range (1,maxClasses)
+    fcls <- replicateM nc candidateClasses
+    let cls = fmap snd fcls
+        totalscore = sum (fmap fst fcls)
+    ns <- partitionLength nc maxStars
+    let ngs = multiTake ns cls
+    return ((nc + length ngs, totalscore), Glob (init ngs) (last ngs))
