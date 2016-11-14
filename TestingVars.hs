@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 import Ring
+import Probability
 import WeightedDFA
 import MaxentGrammar
 import WeightOptimizer
@@ -32,6 +33,7 @@ abcLex = sortLexicon [ ("abc", 100)
                      , ("dbca", 200)
                      , ("bcd", 100)
                      ]
+abcLen = lengthDistribution abcLex
 
 c1 = countngrams ('a','d') ["a","a"]
 c2 = countngrams ('a','d') ["b","abd"]
@@ -41,5 +43,5 @@ g2 = dfaProduct consMC c2 (mapweights singleMC c1)
 abcViols = observedViolations g2 abcLex
 
 abcRandom :: Vec -> Int -> [String]
-abcRandom weights seed = evalState (sequence . replicate 100 $ sampleWord dfa 4) (mkStdGen seed)
+abcRandom weights seed = evalState (sampleWordSalad dfa abcLen 100) (mkStdGen seed)
     where dfa = dropCounts (weightConstraints g2 weights)

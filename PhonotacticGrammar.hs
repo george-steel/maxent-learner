@@ -2,6 +2,7 @@
 module PhonotacticGrammar where
 
 import Ring
+import Probability
 import MaxentGrammar
 import WeightedDFA
 import Text.CSV
@@ -207,8 +208,41 @@ localTrigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubl
                         return (w1+w2, cls3')
             return ((3,w), Glob [] [cls1,cls2,cls3])
 
-nonlocalTrigramGlobs :: [(Int, NaturalClass)] -> [(Int, NaturalClass)] -> [Glob]
-nonlocalTrigramGlobs classes extraclasses = []
+nonlocalTrigramGlobs :: [(Int, NaturalClass)] -> [NaturalClass] -> [Glob]
+nonlocalTrigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubles ++ brokendoubles ++ tripples
+    where
+        nonlocalpenalty = 1000
+        singles = do
+            (w,cls) <- classes
+            let g = Glob [] [cls]
+            guard (not (isInverted cls))
+            return ((1,w),g)
+        doubles = do
+            (w1,cls1) <- classes
+            (w2,cls2) <- classes
+            guard (not (isInverted cls1 && isInverted cls2))
+            return ((2,w1+w2), Glob [] [cls1,cls2])
+        brokendoubles = do
+            ((_,w), Glob [] [cls1,cls2]) <- doubles
+            guard (not (isInverted cls1) && not (isInverted cls2))
+            return ((2,w+nonlocalpenalty), Glob [[cls1]] [cls2])
+        tripples = do
+            (w1,cls1) <- classes
+            (w2,cls2) <- classes
+            (w,cls3) <- case () of
+                 () | cls1 `elem` coreClasses -> do
+                        (w3,cls3') <- classes
+                        guard (not (isInverted cls2 && isInverted cls3'))
+                        return (w2+w3, cls3')
+                    | cls2 `elem` coreClasses -> do
+                        (w3,cls3') <- classes
+                        guard (not (isInverted cls1 && isInverted cls3'))
+                        return (w1+w3, cls3')
+                    | otherwise -> do
+                        cls3' <- coreClasses
+                        guard (not (isInverted cls1 && isInverted cls2))
+                        return (w1+w2, cls3')
+            return ((3,w), Glob [] [cls1,cls2,cls3])
 
 nonlocalNGrams :: Int -> Int -> [(Int, NaturalClass)] -> [Glob]
 nonlocalNGrams maxStars maxClasses candidateClasses = fmap snd . sortOn fst $ do
