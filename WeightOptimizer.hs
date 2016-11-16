@@ -58,20 +58,21 @@ conjugateGradientSearch (e1, e2) fstar f' start = cjs dims (start ⊕ Vec [2*e1]
                 (v,grad) = fstar x
                 beta' = innerProd grad (oldgrad ⊖ grad) / innerProd oldgrad oldgrad --Polak-Ribière
                 (beta, nbal) = if (bal >= dims || beta' <= 0) then (0,0) else (beta', bal + 1)
-                sdir = (addinv grad) ⊕ (beta ⊙ olddir)
-                newx = traceShow (x,v) (regulaFalsiSearch e2 f' x sdir)
+                sdir = (beta ⊙ olddir) ⊖ grad
+                newx = {-traceShow (x,v)-} (regulaFalsiSearch e2 f' x sdir)
 
 
 --------------------------------------------------------------------------------
 
 -- line search specialized for lexLogProb
-llpLineSearch :: (Ix sigma) => M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> Vec -> Vec
-llpLineSearch viols ctr weights sdir = regulaFalsiSearch 0.01 (lexLogProbPartialDeriv viols ctr) weights sdir
+llpLineSearch :: (Ix sigma) => Lexicon sigma -> Vec -> MaxentViolationCounter sigma -> Vec -> Vec -> Vec
+llpLineSearch wfs oviols ctr weights sdir = regulaFalsiSearch 0.01 (lexLogProbPartialDeriv wfs oviols ctr) weights sdir
 
 -- calculate weights to maximize probability of lexicon.
 -- takes starting position of search which MUST have the correct number of entries (do not use `zero`)
-llpOptimizeWeights :: (Ix sigma) => M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> Vec
-llpOptimizeWeights viols ctr initweights = conjugateGradientSearch (0.01, 0.005)
-                                                                   (lexLogProbTotalDeriv viols ctr)
-                                                                   (lexLogProbPartialDeriv viols ctr)
-                                                                   initweights
+llpOptimizeWeights :: (Ix sigma) => Lexicon sigma -> MaxentViolationCounter sigma -> Vec -> Vec
+llpOptimizeWeights wfs dfa initweights = let oviols = observedViolations dfa wfs
+                                         in conjugateGradientSearch (0.01, 0.005)
+                                                                    (lexLogProbTotalDeriv wfs oviols dfa)
+                                                                    (lexLogProbPartialDeriv wfs oviols dfa)
+                                                                    initweights

@@ -86,15 +86,15 @@ allFeatures ft = elems (featNames ft)
 
 data NaturalClass = NClass { isInverted ::Bool
                            , featureList :: [(FeatureState, String)]
-                           } deriving (Eq, Ord, Read, Show)
+                           } deriving (Eq, Ord)
 
-showClass :: NaturalClass -> String
-showClass (NClass isNegated feats) = (if isNegated then "[¬ " else "[") ++ unwords (fmap showfeat feats) ++ "]"
-    where showfeat (fs, fn) = (case fs of
-                                    FPlus -> "+"
-                                    FMinus -> "−"
-                                    FOff -> "0")
-                              ++ fn
+instance Show NaturalClass where
+    show (NClass isNegated feats) = (if isNegated then "[¬ " else "[") ++ unwords (fmap showfeat feats) ++ "]"
+        where showfeat (fs, fn) = (case fs of
+                                        FPlus -> "+"
+                                        FMinus -> "−"
+                                        FOff -> "0")
+                                  ++ fn
 
 xor :: Bool -> Bool -> Bool
 xor False p = p
@@ -114,10 +114,10 @@ classToSeglist ft (NClass isNegated cls) = do
 type NGram = [NaturalClass]
 data Glob = Glob { leftContexts :: [NGram]
                  , countedSequence :: NGram }
-                 deriving (Eq, Read, Show)
+                 deriving (Eq)
 
-showGlob :: Glob -> String
-showGlob (Glob ctxs cs) = intercalate "…" (fmap (>>= showClass) (ctxs ++ [cs]))
+instance Show Glob where
+    show (Glob ctxs cs) = intercalate "…" (fmap (>>= show) (ctxs ++ [cs]))
 
 countGlobMatches :: FeatureTable sigma -> Glob -> WDFA Int SegRef (Sum Int)
 countGlobMatches ft (Glob ctxs cs) = buildDFA ictxs
@@ -125,18 +125,6 @@ countGlobMatches ft (Glob ctxs cs) = buildDFA ictxs
         ictxs = fmap (fmap (classToSeglist ft)) ctxs
         ics = fmap (classToSeglist ft) cs
         buildDFA gs = foldr gateLeftContext (countngrams (srBounds ft) ics) gs
-
-
-
-data ConstraintSet = ConstraintSet { constraintList :: [Glob]
-                                   , violationCounter :: MaxentViolationCounter SegRef }
-                                   deriving (Show)
-
-emptyConstraintSet :: FeatureTable sigma -> ConstraintSet
-emptyConstraintSet ft = ConstraintSet [] (nildfa (srBounds ft))
-
-consConstraint :: FeatureTable sigma -> Glob -> ConstraintSet -> ConstraintSet
-consConstraint ft g cs = ConstraintSet (g : constraintList cs) (dfaProduct consMC (countGlobMatches ft g) (violationCounter cs))
 
 
 

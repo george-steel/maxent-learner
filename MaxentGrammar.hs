@@ -57,67 +57,68 @@ expectedViolations dfa = fmap ((prob &&& normalizeExp) . sumR) (iterate (stepwei
 
 
 
+type Length = Int
 
 -- list of words with their frequenceis sorted by length
-data Lexicon sigma = Lex { totalOccurrences :: Int
-                         , wordsByLength :: M.Map Int (Int, M.Map [sigma] Int)
+data Lexicon sigma = Lex { totalWords :: Int
+                         , lengthFreqs :: M.Map Length Int
+                         , wordFreqs :: M.Map [sigma] Int
                          } deriving Show
 
 -- convert jumbled list fo words and frequencies to sorted lexicon
 sortLexicon :: (Ord sigma) => [([sigma],Int)] -> Lexicon sigma
-sortLexicon wfs = Lex (sum . fmap fst $ mwf) mwf
-    where mwf = M.unionsWith (\(nx,xs) (ny,ys) -> (nx+ny, M.unionWith (+) xs ys)) [length w =: (f, w =: f) | (w,f) <- wfs]
+sortLexicon wfs = Lex twords mlengths mwf
+    where
+        mwf = M.fromListWith (+) wfs
+        mlengths = M.mapKeysWith (+) length mwf
+        twords = sum (M.elems mlengths)
 
-lengthDistribution :: Lexicon sigma -> Cdf Int
-lengthDistribution = massToCdf . M.assocs . fmap (fromIntegral . fst) . wordsByLength
+lengthCdf :: Lexicon sigma -> Cdf Length
+lengthCdf = massToCdf . M.assocs . fmap fromIntegral . lengthFreqs
 
-
-(=:) :: k -> a -> M.Map k a
-(=:) = M.singleton
-
+lengthPdf :: Lexicon sigma -> [(Length, Double)]
+lengthPdf wfs = M.assocs . fmap fracOfTotal . lengthFreqs $ wfs
+    where fracOfTotal k = fromIntegral k / fromIntegral (totalWords wfs)
 
 
 -- count totasl violations of each constraint and return totals (and the total number of words) for each length
-observedViolations :: (Ix sigma) => MaxentViolationCounter sigma -> Lexicon sigma -> M.Map Int (Int, [Int])
-observedViolations dfa (Lex _ wfs) = fmap totalviols wfs
-    where
-        viols (w,n) =  fmap (n *) . getMC . transduce dfa $ w
-        totalviols (nw, ws) = (nw, (fmap sum . transpose . fmap viols . M.assocs $ ws))
+observedViolations :: (Ix sigma) => MaxentViolationCounter sigma -> Lexicon sigma -> Vec
+observedViolations dfa wfs = sumR (fmap countViols . M.assocs . wordFreqs $ wfs)
+    where countViols (w,n) = n ⊙ (fromMC . transduce dfa $ w)
 
+observedViolationsSingle :: (Ix sigma) => SingleViolationCounter sigma -> Lexicon sigma -> Double
+observedViolationsSingle dfa wfs = sum (fmap countViols . M.assocs . wordFreqs $ wfs)
+    where countViols (w,n) = fromIntegral (n * (getSum . transduce dfa $ w))
 
 
 -- get log probability of lexicon given total violations (taken as a parameter for caching), a violation counter, and a set of weights.
-lexLogProb :: (Ix sigma) =>  M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> Double
-lexLogProb viols ctr weights = sum . fmap logProb . M.assocs $ viols
+lexLogProb :: (Ix sigma) => Lexicon sigma -> Vec -> MaxentViolationCounter sigma -> Vec -> Double
+lexLogProb wfs oviols ctr weights = totalViolWeight + totalNormalizer
     where
-        pdfa = dropCounts (weightConstraints ctr weights)
-        probs = fmap log (maxentTotals pdfa)
-        logProb :: (Int, (Int, [Int])) -> Double
-        logProb (k, (n, vs)) = (n ⊙ (probs !! k)) + innerProd (fromInts vs) weights
+        probdfa = dropCounts (weightConstraints ctr weights)
+        probs = maxentTotals probdfa
+        totalViolWeight = innerProd oviols weights
+        totalNormalizer = sum . fmap (\(l,n) -> n ⊙ log (probs !! l)) . M.assocs . lengthFreqs $ wfs
 
 -- same as logProb, but also returns its derivative at the weight vector specified.
-lexLogProbTotalDeriv :: (Ix sigma) =>  M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> (Double, Vec)
-lexLogProbTotalDeriv viols ctr weights = (sum (fmap logProb (M.assocs viols)), (1 / nwords) ⊙ sumR (fmap dLogProb (M.assocs viols)))
+lexLogProbTotalDeriv :: (Ix sigma) => Lexicon sigma -> Vec -> MaxentViolationCounter sigma -> Vec -> (Double, Vec)
+lexLogProbTotalDeriv wfs oviols ctr weights = (totalViolWeight + totalNormalizer, oviols ⊖ expviols)
     where
-        nwords :: Double = fromIntegral (sum (fmap fst viols))
         edfa = weightConstraints ctr weights
         exps = expectedViolations edfa
-        logProb :: (Int, (Int, [Int])) -> Double
-        logProb (k, (n, vs)) = (n ⊙ log (fst (exps !! k))) + innerProd (fromInts vs) weights
-        dLogProb :: (Int, (Int, [Int])) -> Vec
-        dLogProb (k, (n, vs)) = fromInts vs ⊖ (n ⊙ snd (exps !! k))
+        totalViolWeight = innerProd oviols weights
+        totalNormalizer = sum . fmap (\(l,n) -> n ⊙ log (fst (exps !! l))) . M.assocs . lengthFreqs $ wfs
+        expviols = sumR . fmap (\(l,n) -> n ⊙ snd (exps !! l)) . M.assocs . lengthFreqs $ wfs
 
 dotWeights :: Vec -> Expectation Vec-> Expectation Double
 dotWeights ws (Exp p es) = Exp p (innerProd es ws)
 
-lexLogProbPartialDeriv :: (Ix sigma) => M.Map Int (Int, [Int]) -> MaxentViolationCounter sigma -> Vec -> Vec -> Double
-lexLogProbPartialDeriv viols ctr weights dir = (sum . fmap dLogProb . M.assocs $ viols) / nwords
+lexLogProbPartialDeriv :: (Ix sigma) => Lexicon sigma -> Vec -> MaxentViolationCounter sigma -> Vec -> Vec -> Double
+lexLogProbPartialDeriv wfs oviols ctr weights dir = innerProd dir oviols - expviols
     where
-        nwords = fromIntegral (sum (fmap fst viols))
         edfa = mapweights (dotWeights dir) (weightConstraints ctr weights)
         exps = expectedViolations edfa
-        dLogProb :: (Int, (Int, [Int])) -> Double
-        dLogProb (k, (n, vs)) = innerProd dir (fromInts vs) - (n ⊙ snd (exps !! k))
+        expviols = sumR . fmap (\(l,n) -> n ⊙ snd (exps !! l)) . M.assocs . lengthFreqs $ wfs
 
 
 
@@ -167,4 +168,3 @@ sampleWordSalad dfa lengthdist samples = mapM sampler wordlenlist
         maxn = maximum (fmap fst wordlen)
         sampler = sampleWord dfa maxn
         wordlenlist = wordlen >>= uncurry (flip replicate)
-        

@@ -7,7 +7,8 @@ module Ring ( Additive(..)
             , RSum, RProd
             , sumR, productR
             , Vec(..), fromInts
-            , innerProd, normVec, normalizeVec
+            , innerProd, normVec, normalizeVec, consVec
+            , showFVec
             , addThese
             ) where
 
@@ -15,6 +16,7 @@ module Ring ( Additive(..)
 --import Data.Monoid
 import Data.These
 import Data.Align
+import Numeric
 
 --------------------------------------------------------------------------------
 -- hierarchy of typeclasses for abstract algebra
@@ -152,9 +154,15 @@ instance RingModule Int Vec where
 innerProd :: Vec -> Vec -> Double
 innerProd (Vec xs) (Vec ys) = sum (zipWith (*) xs ys)
 
+showFVec :: Maybe Int -> Vec -> String
+showFVec prec (Vec xs) = '[' : foldr (((' ':) .) . showFFloat prec) "]" xs
+
 normVec :: Vec -> Double
 normVec x = sqrt (innerProd x x)
 
 normalizeVec :: Vec -> Vec
 normalizeVec x = if n == 0 then x else (1/n) ⊙ x
     where n = normVec x
+
+consVec :: Double -> Vec -> Vec
+consVec x (Vec xs) = Vec (x:xs)
