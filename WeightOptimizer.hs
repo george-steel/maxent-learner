@@ -35,11 +35,11 @@ regulaFalsiSearch epsilon f' xinit sdir = if (dxinit > 0) then xinit else pos (r
             | (dx == 0) = x
             | (dy == 0) = y
             | ((y-x) < epsilon) = secant (x,dx) (y,dy)
-            | (dz <= 0) = rfs (z,dz) (y,dy) (min bal 0 - 1)
-            | otherwise = rfs (x,dx) (z,dz) (max bal 0 + 1)
+            | (dz <= 0) = {-traceShow (x,y, dx, dy, bal) $-} rfs (z,dz) (y,dy) (min bal 0 - 1)
+            | otherwise = {-traceShow (x,y, dx, dy, bal) $-} rfs (x,dx) (z,dz) (max bal 0 + 1)
             where
-                sy = if bal <= (-2) then 0.5 else 1
-                sx = if bal >= 2 then 0.5 else 1
+                sy = if bal <= (-2) then (0.707 ^ negate bal) else 1
+                sx = if bal >= 2 then (0.707 ^ bal) else 1
                 z = (secant (x, sx*dx) (y, sy*dy))
                 dz = f' (pos z) dir
 

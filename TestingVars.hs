@@ -16,24 +16,38 @@ import Data.Monoid
 import Data.Maybe
 import qualified Data.Map as M
 import Control.Arrow
+import Text.Read
 
 import Data.FileEmbed
 
 ftcsv :: String
 ftcsv = $(embedStringFile "./features-char.csv")
 
+onsetcsv :: String
+onsetcsv = $(embedStringFile "./testcases/features-onsets.csv")
+
 ipaft :: FeatureTable Char
 ipaft = fromJust (csvToFeatureTable head ftcsv)
 
-abcLex = sortLexicon [ ("abc", 100)
-                     , ("abcd", 100)
-                     , ("acbc", 200)
-                     , ("ccac", 500)
-                     , ("aaba", 10)
-                     , ("abb", 50)
-                     , ("dbca", 200)
-                     , ("bcd", 100)
-                     , ("dcdc", 10)
+onsetft :: FeatureTable String
+onsetft = fromJust (csvToFeatureTable id onsetcsv)
+
+onsetLex = sortLexicon $ do
+    line <- lines $(embedStringFile "./testcases/EnglishLearningData.txt")
+    let (sw,sn') = break (== '\t') line
+    (_:sn) <- return sn'
+    Just n <- return $ readMaybe sn
+    return (segsToRefs onsetft (words sw), n)
+
+abcLex = sortLexicon [ ("abc", 1000)
+                     , ("abcd", 1000)
+                     , ("acbc", 2000)
+                     , ("ccac", 5000)
+                     --, ("aaba", 10)
+                     , ("abb", 500)
+                     , ("dbca", 2000)
+                     , ("bcd", 1000)
+                     , ("dcdc", 100)
                      ]
 abcLen = lengthCdf abcLex
 
@@ -49,3 +63,16 @@ abcViols = observedViolations g2 abcLex
 abcRandom :: Vec -> Int -> [String]
 abcRandom weights seed = evalState (sampleWordSalad dfa abcLen 100) (mkStdGen seed)
     where dfa = dropCounts (weightConstraints g2 weights)
+
+onsetClasses = classesByGenerality onsetft 3
+
+onsetCoreClasses = fmap (NClass False . return) [(FPlus,"consonantal"),
+                                                 (FMinus,"consonantal"),
+                                                 (FPlus,"sonorant"),
+                                                 (FMinus,"sonorantsonorant")]
+
+onsetCandidates = fmap (id &&& countGlobMatches onsetft) $ localBigramGlobs onsetClasses onsetCoreClasses
+
+ocg1 = Glob [] [NClass True [(FMinus, "voice"),(FPlus, "anterior"),(FPlus, "strident")], NClass False [(FMinus, "approximant")]]
+oc1 = countGlobMatches onsetft ocg1
+og1 = mapweights singleMC oc1

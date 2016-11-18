@@ -155,7 +155,7 @@ innerProd :: Vec -> Vec -> Double
 innerProd (Vec xs) (Vec ys) = sum (zipWith (*) xs ys)
 
 showFVec :: Maybe Int -> Vec -> String
-showFVec prec (Vec xs) = '[' : foldr (((' ':) .) . showFFloat prec) "]" xs
+showFVec prec (Vec xs) = "[" ++ unwords (fmap (\x -> showFFloat prec x []) xs) ++ "]"
 
 normVec :: Vec -> Double
 normVec x = sqrt (innerProd x x)

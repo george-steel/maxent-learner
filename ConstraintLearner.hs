@@ -28,6 +28,7 @@ generateGrammar :: forall g m clabel sigma . (RandomGen g, MonadState g m, Show 
 generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
     let blankdfa = (nildfa . segBounds . snd . head $ possibleConstraints)
         lendist = lengthCdf wfs
+
         chooseConstraints :: Double -- accuracy
                           -> [clabel] -- grammar do far
                           -> MaxentViolationCounter sigma -- DFA of grammar so fat
@@ -41,15 +42,16 @@ generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
         chooseConstraints accuracy grammar dfa weights salad ((cl,cdfa):cs)
             | score > accuracy = chooseConstraints accuracy grammar dfa weights salad cs
             | otherwise = do
-                out $ "Selected Constraint " ++ show cl ++  " (score " ++ showFFloat (Just 3) score ")"
+                out $ "Selected Constraint " ++ show cl ++  " (score " ++ showFFloat (Just 4) score ")."
                 let newgrammar = cl:grammar
                     newdfa = dfaProduct consMC cdfa dfa
-                    oldweights = consVec 0 weights
+                out $ "New grammar has " ++ (show . rangeSize . labelBounds $ newdfa) ++ " states."
+                let oldweights = consVec 0 weights
                     newweights = llpOptimizeWeights wfs newdfa oldweights
                 out $ "Recalculated weights: " ++ showFVec (Just 2) newweights
                 newsalad' <- sampleWordSalad (dropCounts (weightConstraints newdfa newweights)) lendist samplesize
                 let newsalad = sortLexicon . fmap (\x -> (x,1)) $ newsalad'
-                out $ "Generated new salad."
+                -- out $ "Generated new salad."
                 chooseConstraints accuracy newgrammar newdfa newweights newsalad cs
             where
                 score = evaluateConstraint wfs salad cdfa
@@ -69,6 +71,8 @@ generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
             let salad = sortLexicon . fmap (\x -> (x,1)) $ salad'
             (newgrammar, newdfa, newweights) <- chooseConstraints acc grammar dfa weights salad possibleConstraints
             accuracyPass newgrammar newdfa newweights accs
+
+    -- actually call our recursive function
     (grammar, dfa, weights) <- accuracyPass [] blankdfa zero thresholds
 
     return . reverse $ zip grammar (coords weights)

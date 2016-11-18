@@ -83,6 +83,8 @@ allFeatures :: FeatureTable sigma -> [String]
 allFeatures ft = elems (featNames ft)
 
 
+--------------------------------------------------------------------------------
+
 
 data NaturalClass = NClass { isInverted ::Bool
                            , featureList :: [(FeatureState, String)]
@@ -107,7 +109,7 @@ classToSeglist ft (NClass isNegated cls) = do
         return c
     where icls = do
             (s,fn) <- cls
-            fi <- maybeToList (M.lookup fn (featLookup ft))
+            Just fi <- return (M.lookup fn (featLookup ft))
             return (s,fi)
 
 
@@ -119,7 +121,7 @@ data Glob = Glob { leftContexts :: [NGram]
 instance Show Glob where
     show (Glob ctxs cs) = intercalate "…" (fmap (>>= show) (ctxs ++ [cs]))
 
-countGlobMatches :: FeatureTable sigma -> Glob -> WDFA Int SegRef (Sum Int)
+countGlobMatches :: FeatureTable sigma -> Glob -> SingleViolationCounter SegRef
 countGlobMatches ft (Glob ctxs cs) = buildDFA ictxs
     where
         ictxs = fmap (fmap (classToSeglist ft)) ctxs
@@ -134,10 +136,13 @@ ngrams  0  _       = [[]]
 ngrams  _  []      = []
 ngrams  n  (x:xs)  = fmap (x:) (ngrams (n-1) xs) ++ ngrams n xs
 
+-- Enumerate all classes (and their inverses to a certain number of features
+-- in inverse order of the humber of features the uninverted class contains.
+-- Discards duplicates (having the same set of segments).
 classesByGenerality :: FeatureTable sigma -> Int -> [(Int, NaturalClass)]
 classesByGenerality ft maxfeats = fmap (\((ns, _), c) -> (ns,c)) (M.assocs cls)
     where
-        cls = M.fromListWith const $ do
+        cls = M.fromListWith (flip const) $ do
             isInv <- [False,True]
             nf <- range (1, maxfeats)
             fs <- ngrams nf (elems (featNames ft))
@@ -147,6 +152,8 @@ classesByGenerality ft maxfeats = fmap (\((ns, _), c) -> (ns,c)) (M.assocs cls)
             guard (ns /= 0)
             return ((negate ns, cs), c)
 
+
+--------------------------------------------------------------------------------
 
 partitionLength :: Int -> Int -> [[Int]]
 partitionLength n 0 = return [n]
@@ -195,6 +202,20 @@ localTrigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubl
                         guard (not (isInverted cls1 && isInverted cls2))
                         return (w1+w2, cls3')
             return ((3,w), Glob [] [cls1,cls2,cls3])
+
+localBigramGlobs :: [(Int, NaturalClass)] -> [NaturalClass] -> [Glob]
+localBigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubles
+    where
+        singles = do
+            (w,cls) <- classes
+            let g = Glob [] [cls]
+            guard (not (isInverted cls))
+            return ((1,w),g)
+        doubles = do
+            (w1,cls1) <- classes
+            (w2,cls2) <- classes
+            guard (not (isInverted cls1 && isInverted cls2))
+            return ((2,w1+w2), Glob [] [cls1,cls2])
 
 nonlocalTrigramGlobs :: [(Int, NaturalClass)] -> [NaturalClass] -> [Glob]
 nonlocalTrigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubles ++ brokendoubles ++ tripples
