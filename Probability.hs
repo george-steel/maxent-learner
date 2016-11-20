@@ -5,29 +5,39 @@ import Ring
 --import Data.List
 import Data.Tuple
 import Data.Monoid
-import Data.Align
 import qualified Data.Map as M
 import System.Random
 import Control.Monad.State
+import qualified Data.Vector.Unboxed as V
 
 -- monoid for counting multiple quantities.
 -- Union of the lattices Z < Z^2 < Z^3 < ...
-newtype Multicount = MC {getMC :: [Int]} deriving (Eq, Show)
+newtype Multicount = MC (V.Vector Int) deriving (Eq, Show)
+
+getMC :: Multicount -> [Int]
+getMC (MC xs) = V.toList xs
 
 instance Monoid Multicount where
-    mempty = MC []
-    mappend (MC x) (MC y) = MC (alignWith addThese x y)
+    mempty = MC V.empty
+    mappend (MC xs) (MC ys)
+        | V.null xs = MC ys
+        | V.null ys = MC xs
+        | lx == ly = MC (V.zipWith (+) xs ys)
+        | lx < ly = MC (V.zipWith (+) xs (V.take lx ys) V.++ V.drop lx ys)
+        | ly < lx = MC (V.zipWith (+) ys (V.take ly xs) V.++ V.drop ly xs)
+        where lx = V.length xs
+              ly = V.length ys
 
 -- add new count to head of list
 consMC :: Sum Int -> Multicount -> Multicount
-consMC (Sum x) (MC xs) = MC (x : xs)
+consMC (Sum x) (MC xs) = MC (V.cons x xs)
 
 -- convert single counter to multicount
 singleMC :: Sum Int -> Multicount
-singleMC (Sum x) = MC [x]
+singleMC (Sum x) = MC (V.singleton x)
 
 fromMC :: Multicount -> Vec
-fromMC = Vec . fmap fromIntegral . getMC
+fromMC (MC xs) = Vec (V.map fromIntegral xs)
 
 
 --------------------------------------------------------------------------------

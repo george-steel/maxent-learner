@@ -6,17 +6,15 @@ module Ring ( Additive(..)
             , RingModule(..)
             , RSum, RProd
             , sumR, productR
-            , Vec(..), fromInts
+            , Vec(..), coords, fromInts, vec
             , innerProd, normVec, normalizeVec, consVec
             , showFVec
-            , addThese
             ) where
 
 --import Data.Foldable
 --import Data.Monoid
-import Data.These
-import Data.Align
 import Numeric
+import qualified Data.Vector.Unboxed as V
 
 --------------------------------------------------------------------------------
 -- hierarchy of typeclasses for abstract algebra
@@ -126,36 +124,44 @@ instance RingModule Int Double where
     x ⊙ y = fromIntegral x * y
 
 
-addThese :: (Num a) => These a a -> a
-addThese (This a) = a
-addThese (That b) = b
-addThese (These a b) = a + b
-
-
 -- polynomial-like vector space
 -- behaves like union of R < R² < R³ < …
-newtype Vec = Vec {coords ::[Double]} deriving (Eq, Read, Show)
+newtype Vec = Vec (V.Vector Double) deriving (Eq, Read, Show)
+
+coords :: Vec -> [Double]
+coords (Vec xs) = V.toList xs
 
 fromInts :: [Int] -> Vec
-fromInts xs = Vec (fmap fromIntegral xs)
+fromInts xs = Vec . V.fromList . fmap fromIntegral $ xs
+
+vec :: [Double] -> Vec
+vec = Vec . V.fromList
 
 instance Additive Vec where
-    zero = Vec []
-    (Vec xs) ⊕ (Vec ys) = Vec (alignWith addThese xs ys)
+    zero = Vec V.empty
+    (Vec xs) ⊕ (Vec ys)
+        | V.null xs = Vec ys
+        | V.null ys = Vec xs
+        | lx == ly = Vec (V.zipWith (+) xs ys)
+        | lx < ly = Vec (V.zipWith (+) xs (V.take lx ys) V.++ V.drop lx ys)
+        | ly < lx = Vec (V.zipWith (+) ys (V.take ly xs) V.++ V.drop ly xs)
+        where lx = V.length xs
+              ly = V.length ys
+
 instance Subtractive Vec where
-    addinv (Vec xs) = Vec (fmap negate xs)
+    addinv (Vec xs) = Vec (V.map negate xs)
 
 instance RingModule Double Vec where
-    a ⊙ (Vec xs) = Vec (fmap (a *) xs)
+    a ⊙ (Vec xs) = Vec (V.map (a *) xs)
 instance RingModule Int Vec where
-    a ⊙ (Vec xs) = Vec (fmap (fromIntegral a *) xs)
+    a ⊙ (Vec xs) = Vec (V.map (fromIntegral a *) xs)
 
 
 innerProd :: Vec -> Vec -> Double
-innerProd (Vec xs) (Vec ys) = sum (zipWith (*) xs ys)
+innerProd (Vec xs) (Vec ys) = V.sum (V.zipWith (*) xs ys)
 
 showFVec :: Maybe Int -> Vec -> String
-showFVec prec (Vec xs) = "[" ++ unwords (fmap (\x -> showFFloat prec x []) xs) ++ "]"
+showFVec prec (Vec xs) = "[" ++ (unwords . fmap (\x -> showFFloat prec x []) . V.toList $ xs) ++ "]"
 
 normVec :: Vec -> Double
 normVec x = sqrt (innerProd x x)
@@ -165,4 +171,4 @@ normalizeVec x = if n == 0 then x else (1/n) ⊙ x
     where n = normVec x
 
 consVec :: Double -> Vec -> Vec
-consVec x (Vec xs) = Vec (x:xs)
+consVec x (Vec xs) = Vec (V.cons x xs)

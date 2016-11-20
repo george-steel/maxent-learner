@@ -47,7 +47,7 @@ regulaFalsiSearch epsilon f' xinit sdir = if (dxinit > 0) then xinit else pos (r
 -- fstar calculates function value and total derivative
 -- f' calculates direcrtional derivatives
 conjugateGradientSearch :: (Double, Double) -> (Vec -> (Double, Vec)) -> (Vec -> Vec -> Double) -> Vec -> Vec
-conjugateGradientSearch (e1, e2) fstar f' start = cjs dims (start ⊕ Vec [2*e1]) zero zero start
+conjugateGradientSearch (e1, e2) fstar f' start = cjs dims (start ⊕ vec [2*e1]) zero zero start
     where                                       -- fake last step triggers restart and aviods stopping condition
         dims = length (coords start)
         cjs :: Int -> Vec -> Vec -> Vec -> Vec -> Vec

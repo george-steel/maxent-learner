@@ -10,7 +10,7 @@ import Data.Array.MArray
 import Data.Array.ST
 import Data.Array.Unboxed ()
 import Data.Ix
-import Data.Tuple
+import Data.List
 import Data.Bits
 import Data.Monoid
 import Ring
@@ -97,17 +97,11 @@ nildfa (lsb,usb) = WDFA (array ((1,lsb),(1,usb)) (fmap (\c -> ((1,c),(1,mempty))
 
 -- transduce a string of segments where and output the product of the weights (as a Monoid)
 transduce :: (Ix l, Ix sigma, Monoid w) => WDFA l sigma w -> [sigma] -> w
-transduce dfa@(WDFA arr) cs = mconcat $ evalState (mapM trans cs) (fst (labelBounds dfa))
-    where
-        trans = state . tf
-        tf c s = swap (arr!(s,c))
+transduce dfa@(WDFA arr) cs = foldl' (<>) mempty . snd $ mapAccumL (curry (arr!)) (fst (labelBounds dfa)) cs
 
 -- transduce a string of segments where and output the product of the weights (as a Ring)
 transduceR :: (Ix l, Ix sigma, Semiring w) => WDFA l sigma w -> [sigma] -> w
-transduceR dfa@(WDFA arr) cs = foldl (⊗) one $ evalState (mapM trans cs) (fst (labelBounds dfa))
-    where
-        trans = state . tf
-        tf c s = swap (arr!(s,c))
+transduceR dfa@(WDFA arr) cs = productR . snd $ mapAccumL (curry (arr!)) (fst (labelBounds dfa)) cs
 
 -- creates a transducer to count occurrences of an n-gram.
 -- Takes a sequence of classes each reperesented as a list of segments

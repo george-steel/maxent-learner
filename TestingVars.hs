@@ -76,3 +76,7 @@ onsetCandidates = fmap (id &&& countGlobMatches onsetft) $ localBigramGlobs onse
 ocg1 = Glob [] [NClass True [(FMinus, "voice"),(FPlus, "anterior"),(FPlus, "strident")], NClass False [(FMinus, "approximant")]]
 oc1 = countGlobMatches onsetft ocg1
 og1 = mapweights singleMC oc1
+
+main = do
+    grammar <- generateGrammarIO 3000 [0.001, 0.01, 0.1, 0.2] onsetCandidates onsetLex 1
+    putStrLn . unlines . fmap show $ grammar
