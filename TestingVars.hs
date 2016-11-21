@@ -17,6 +17,8 @@ import Data.Maybe
 import qualified Data.Map as M
 import Control.Arrow
 import Text.Read
+import Control.Exception (evaluate)
+import Control.DeepSeq
 
 import Data.FileEmbed
 
@@ -71,12 +73,14 @@ onsetCoreClasses = fmap (NClass False . return) [(FPlus,"consonantal"),
                                                  (FPlus,"sonorant"),
                                                  (FMinus,"sonorantsonorant")]
 
-onsetCandidates = fmap (id &&& countGlobMatches onsetft) $ localBigramGlobs onsetClasses onsetCoreClasses
+onsetCandidates = fmap (id &&& countGlobMatches onsetft) $ localTrigramGlobs onsetClasses onsetCoreClasses
 
 ocg1 = Glob [] [NClass True [(FMinus, "voice"),(FPlus, "anterior"),(FPlus, "strident")], NClass False [(FMinus, "approximant")]]
 oc1 = countGlobMatches onsetft ocg1
 og1 = mapweights singleMC oc1
 
 main = do
-    grammar <- generateGrammarIO 3000 [0.001, 0.01, 0.1, 0.2] onsetCandidates onsetLex 1
+    evaluate $ force onsetCandidates
+    putStrLn "Computed UG."
+    grammar <- generateGrammarIO 3000 [0.001, 0.01, 0.1, 0.2, 0.3] onsetCandidates onsetLex 1
     putStrLn . unlines . fmap show $ grammar

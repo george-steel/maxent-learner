@@ -12,14 +12,17 @@ import Data.Tuple
 import Data.List
 import Data.Monoid
 import Control.Monad
+import Control.DeepSeq
 import qualified Data.Map.Lazy as M
 
 
 -- enumeration for feature states (can be +,-,0)
 data FeatureState = FOff | FPlus | FMinus deriving (Enum, Eq, Ord, Read, Show)
+instance NFData FeatureState where
+    rnf fs = fs `seq` ()
 
 -- using integer indexes to a lookup table to represent segments
-newtype SegRef = Seg Int deriving (Eq, Ord, Read, Show, Ix)
+newtype SegRef = Seg Int deriving (Eq, Ord, Read, Show, Ix, NFData)
 
 data FeatureTable sigma = FeatureTable { featTable :: Array (SegRef,Int) FeatureState
                                        , featNames :: Array Int String
@@ -86,9 +89,11 @@ allFeatures ft = elems (featNames ft)
 --------------------------------------------------------------------------------
 
 
-data NaturalClass = NClass { isInverted ::Bool
+data NaturalClass = NClass { isInverted :: Bool
                            , featureList :: [(FeatureState, String)]
                            } deriving (Eq, Ord)
+instance NFData NaturalClass where
+    rnf c@(NClass b fs) = b `seq` rnf fs
 
 instance Show NaturalClass where
     show (NClass isNegated feats) = (if isNegated then "[¬ " else "[") ++ unwords (fmap showfeat feats) ++ "]"
@@ -103,7 +108,7 @@ xor False p = p
 xor True p = not p
 
 classToSeglist :: FeatureTable sigma -> NaturalClass -> [SegRef]
-classToSeglist ft (NClass isNegated cls) = do
+classToSeglist ft (NClass isNegated cls) = force $ do
         c <- range (srBounds ft)
         guard (isNegated `xor` and [ftlook ft c fi == fs | (fs,fi) <- icls])
         return c
@@ -117,12 +122,14 @@ type NGram = [NaturalClass]
 data Glob = Glob { leftContexts :: [NGram]
                  , countedSequence :: NGram }
                  deriving (Eq)
+instance NFData Glob where
+    rnf (Glob ctxs cs) = rnf ctxs `seq` rnf cs
 
 instance Show Glob where
     show (Glob ctxs cs) = intercalate "…" (fmap (>>= show) (ctxs ++ [cs]))
 
 countGlobMatches :: FeatureTable sigma -> Glob -> SingleViolationCounter SegRef
-countGlobMatches ft (Glob ctxs cs) = buildDFA ictxs
+countGlobMatches ft (Glob ctxs cs) = force $ buildDFA ictxs
     where
         ictxs = fmap (fmap (classToSeglist ft)) ctxs
         ics = fmap (classToSeglist ft) cs
@@ -140,11 +147,11 @@ ngrams  n  (x:xs)  = fmap (x:) (ngrams (n-1) xs) ++ ngrams n xs
 -- in inverse order of the humber of features the uninverted class contains.
 -- Discards duplicates (having the same set of segments).
 classesByGenerality :: FeatureTable sigma -> Int -> [(Int, NaturalClass)]
-classesByGenerality ft maxfeats = fmap (\((ns, _), c) -> (ns,c)) (M.assocs cls)
+classesByGenerality ft maxfeats = force $ fmap (\((ns, _), c) -> (ns,c)) (M.assocs cls)
     where
         cls = M.fromListWith (flip const) $ do
             isInv <- [False,True]
-            nf <- range (1, maxfeats)
+            nf <- range (0, maxfeats)
             fs <- ngrams nf (elems (featNames ft))
             c <- fmap (NClass isInv) . forM fs $ \f -> [(FPlus,f), (FMinus,f)]
             let cs = classToSeglist ft c

@@ -1,15 +1,14 @@
-{-# LANGUAGE ScopedTypeVariables, ExplicitForAll #-}
+{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, GeneralizedNewtypeDeriving #-}
 
 module WeightedDFA where
 
+import Control.DeepSeq
 import Control.Monad
 import Control.Monad.ST
-import Control.Monad.State
 import Data.Array.IArray
 import Data.Array.MArray
 import Data.Array.ST
 import Data.Array.Unboxed ()
-import Data.Ix
 import Data.List
 import Data.Bits
 import Data.Monoid
@@ -20,7 +19,7 @@ import Ring
 -- Type for deterministic finite state transducers.
 -- The array maps from (state, character) -> (next state, weight output)
 -- both state labels and characters to consume must be contiguous ranges.
-newtype WDFA l sigma w = WDFA (Array (l,sigma) (l,w)) deriving Show
+newtype WDFA l sigma w = WDFA (Array (l,sigma) (l,w)) deriving (Show, NFData)
 
 -- bounds for state labels
 labelBounds :: (Ix l, Ix sigma) => WDFA l sigma w -> (l,l)

@@ -46,8 +46,8 @@ fromMC (MC xs) = Vec (V.map fromIntegral xs)
 
 -- expectation semiring as described by Eisner
 -- holds total probability of event and the events contribution to an expectation vector
-data Expectation v = Exp { prob :: Double
-                         , exps :: v }
+data Expectation v = Exp { prob :: {-# UNPACK #-} !Double
+                         , exps :: {-# UNPACK #-} !v }
                    deriving (Eq, Show)
 
 -- combine exclusive events
