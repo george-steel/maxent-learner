@@ -12,17 +12,18 @@ import Control.DeepSeq
 import Data.Ix
 import Numeric
 
+-- calculate accuracy score of constraint given the grammar so far
 evaluateConstraint :: (Ix sigma) => Lexicon sigma -> Lexicon sigma -> SingleViolationCounter sigma -> Double
 evaluateConstraint wfs salad dfa = upperConfidenceOE o e
     where
         o = observedViolationsSingle dfa wfs
         e = observedViolationsSingle dfa salad * fromIntegral (totalWords wfs) / fromIntegral (totalWords salad)
 
-
+-- main function to learn a list fo constraints,
 generateGrammar :: forall g m clabel sigma . (RandomGen g, MonadState g m, Show clabel, Ix sigma, NFData sigma, NFData sigma, Eq clabel) -- In the typical case, m = StateT g IO, clabel = Glob, sigma = SegRef
     => (String -> m ()) -- function to log messages. (liftIO . putStrLn), write, and void are all good canduidates
     -> Int -- Monte Carlo sample size
-    -> [Double] -- list of accuract thresholds
+    -> [Double] -- list of accuracy thresholds
     -> [(clabel, SingleViolationCounter sigma)] -- list of constraints to try in order. Each constraint has a label and a dfa to compute it
     -> Lexicon sigma -- List of words to try and their frequencies
     -> m [(clabel, Double)] -- computed grammar
@@ -78,11 +79,20 @@ generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
 
     return . reverse $ zip grammar (coords weights)
 
+
+{- main entry point for constraint learning.
+
+This function makes no assumptions as to UG and instead, takes in a list of constraint candidates (in order of decreasing generality).
+These constraints take the form of a pair consisting of a label (only compared for equality to prevent duplication)
+and a DFA which counts the number of times a constraint is violated in a string.
+
+To generate a constraint candidate list, several UG functions are contained in the PhonotacticGrammar module
+-}
 generateGrammarIO :: (Ix sigma, Show clabel, Eq clabel, NFData sigma) => Int -- Monte Carlo sample size
     -> [Double] -- list of accuract thresholds
     -> [(clabel, SingleViolationCounter sigma)] -- list of constraints to try in order. Each constraint has a label and a dfa to compute it
     -> Lexicon sigma -- List of words to try and their frequencies
-    -> Int --random seed
     -> IO [(clabel, Double)]
-generateGrammarIO samplesize thresholds (possibleConstraints) wfs seed =
-    evalStateT (generateGrammar (liftIO . putStrLn) samplesize thresholds (possibleConstraints) wfs) (mkStdGen seed)
+generateGrammarIO samplesize thresholds (possibleConstraints) wfs = do
+    gen <- newStdGen
+    evalStateT (generateGrammar (liftIO . putStrLn) samplesize thresholds (possibleConstraints) wfs) gen

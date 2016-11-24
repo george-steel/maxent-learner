@@ -82,5 +82,5 @@ og1 = mapweights singleMC oc1
 main = do
     evaluate $ force onsetCandidates
     putStrLn "Computed UG."
-    grammar <- generateGrammarIO 3000 [0.001, 0.01, 0.1, 0.2, 0.3] onsetCandidates onsetLex 1
+    grammar <- generateGrammarIO 3000 [0.001, 0.01, 0.1, 0.2, 0.3] onsetCandidates onsetLex
     putStrLn . unlines . fmap show $ grammar
