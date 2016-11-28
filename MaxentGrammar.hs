@@ -5,18 +5,15 @@ module MaxentGrammar where
 import Ring
 import WeightedDFA
 import Probability
-import Data.Align
-import Data.These
 import Data.Array.IArray
 import Data.Array.Unboxed
 import Control.Monad
 import Control.Monad.State
-import Control.Monad.Trans.Class
-import Control.Arrow
+--import Control.Monad.Trans.Class
+import Control.Arrow ((&&&),(***))
 import System.Random
 import Data.List
 import Data.Monoid
-import Data.Tuple
 import qualified Data.Map as M
 --------------------------------------------------------------------------------
 
@@ -25,10 +22,10 @@ import qualified Data.Map as M
 --------------------------------------------------------------------------------
 
 -- aliases for various roles of transducer
-type SingleViolationCounter sigma = WDFA Int sigma (Sum Int)
-type MaxentViolationCounter sigma = WDFA Int sigma Multicount
-type MaxentProbTransducer sigma = WDFA Int sigma Double
-type MaxentExpTransducer sigma = WDFA Int sigma (Expectation Vec)
+type SingleViolationCounter sigma = DFST Int sigma (Sum Int)
+type MaxentViolationCounter sigma = DFST Int sigma Multicount
+type MaxentProbTransducer sigma = DFST Int sigma Double
+type MaxentExpTransducer sigma = DFST Int sigma (Expectation Vec)
 
 
 -- given maxent weights, turn count into their expectations
@@ -38,22 +35,24 @@ weightMC weights counts = Exp p (p ⊙ fromMC counts)
 
 -- add weights to a counting transducer to get expectation transducer
 weightConstraints :: (Ix sigma) => MaxentViolationCounter sigma -> Vec -> MaxentExpTransducer sigma
-weightConstraints dfa ws = mapweights (weightMC ws) dfa
+weightConstraints dfa ws = fmap (weightMC ws) dfa
 
 -- drop expectation data to give probability-only transducer
 dropCounts :: (Ix sigma) => MaxentExpTransducer sigma -> MaxentProbTransducer sigma
-dropCounts = mapweights prob
+dropCounts = fmap prob
 
 -- get list total maxent values by string length. corecursive.
 -- each entry in the list gives the total probability of all strings fo length n
 -- Hayes and Wilson refer to this quantity as Z
 maxentTotals :: (Ix sigma) => MaxentProbTransducer sigma -> [Double]
-maxentTotals dfa = fmap sum (iterate (stepweights dfa) (initialWeightArray dfa))
+maxentTotals dfa = fmap totalp (iterate (stepweights dfa) (initialWeightArray dfa))
+    where totalp arr = sum $ zipWith (*) (elems (finalWeights dfa)) (elems arr)
 
 -- get expectation vector of gonstraints over the probability distribution defined by the transducer
--- returns a corecursive list of vectors for each length of string
-expectedViolations :: (RingModule Double v, Ix sigma) => WDFA Int sigma (Expectation v) -> [(Double, v)]
-expectedViolations dfa = fmap ((prob &&& normalizeExp) . sumR) (iterate (stepweights dfa) (initialWeightArray dfa))
+-- returns a colist of vectors for each length of string
+expectedViolations :: (RingModule Double v, Ix sigma) => DFST Int sigma (Expectation v) -> [(Double, v)]
+expectedViolations dfa = fmap totalexp (iterate (stepweights dfa) (initialWeightArray dfa))
+    where totalexp arr = (prob &&& normalizeExp) . sumR $ zipWith (⊗) (elems (finalWeights dfa)) (elems arr)
 
 
 
@@ -84,11 +83,11 @@ lengthPdf wfs = M.assocs . fmap fracOfTotal . lengthFreqs $ wfs
 -- count totasl violations of each constraint and return totals (and the total number of words) for each length
 observedViolations :: (Ix sigma) => MaxentViolationCounter sigma -> Lexicon sigma -> Vec
 observedViolations dfa wfs = sumR (fmap countViols . M.assocs . wordFreqs $ wfs)
-    where countViols (w,n) = n ⊙ (fromMC . transduce dfa $ w)
+    where countViols (w,n) = n ⊙ (fromMC . transduceM dfa $ w)
 
 observedViolationsSingle :: (Ix sigma) => SingleViolationCounter sigma -> Lexicon sigma -> Double
 observedViolationsSingle dfa wfs = sum (fmap countViols . M.assocs . wordFreqs $ wfs)
-    where countViols (w,n) = fromIntegral (n * (getSum . transduce dfa $ w))
+    where countViols (w,n) = fromIntegral (n * (getSum . transduceM dfa $ w))
 
 
 -- get log probability of lexicon given total violations (taken as a parameter for caching), a violation counter, and a set of weights.
@@ -118,7 +117,7 @@ dotWeights ws (Exp p es) = Exp p (innerProd es ws)
 lexLogProbPartialDeriv :: (Ix sigma) => Lexicon sigma -> Vec -> MaxentViolationCounter sigma -> Vec -> Vec -> Double
 lexLogProbPartialDeriv wfs oviols ctr weights dir = innerProd weights dir + innerProd dir oviols - expviols
     where
-        edfa = mapweights (dotWeights dir) (weightConstraints ctr weights)
+        edfa = fmap (dotWeights dir) (weightConstraints ctr weights)
         exps = expectedViolations edfa
         expviols = sumR . fmap (\(l,n) -> n ⊙ snd (exps !! l)) . M.assocs . lengthFreqs $ wfs
 
@@ -139,12 +138,12 @@ sampleWord dfa maxn = backDists `seq` \n -> do
             return c
         return (reverse rcs)
     where
-        backnfa = reverseDFA dfa
-        (smin, smax) = labelBounds dfa
+        backnfa = reverseTM dfa
+        qbound = stateBounds dfa
 
         maxentPrefixes = take (maxn + 1) (iterate (stepweights dfa) (initialWeightArray dfa))
         maxentArray :: UArray (Int,Int) Double
-        maxentArray = array ((0,smin), (maxn,smax)) . join . snd . mapAccumL (\k a -> (k+1, fmap (\(x,p)->((k,x),p)) (assocs a))) 0 $ maxentPrefixes
+        maxentArray = array ((0,maxn) `xbd` qbound) . join . snd . mapAccumL (\k a -> (k+1, fmap (\(x,p)->((k,x),p)) (assocs a))) 0 $ maxentPrefixes
 
         backDist :: (Int, Int) -> Cdf (sigma, Int)
         backDist (k, s) = massToCdf $ do
@@ -153,14 +152,14 @@ sampleWord dfa maxn = backDists `seq` \n -> do
             return ((c,s'), w * (maxentArray!(k-1,s')))
         -- memoized version
         backDists :: Array (Int, Int) (Cdf (sigma, Int))
-        backDists = array ((1,smin), (maxn,smax)) (fmap (id &&& backDist) (range ((1,smin), (maxn,smax))))
+        backDists = fnArray ((1,maxn) `xbd` qbound) backDist
 
         finalStates :: Array Int (Cdf Int)
         finalStates = array (1,maxn) $ do
             n <- range (1,maxn)
             let cdf = massToCdf $ do
-                    s <- range (smin,smax)
-                    return (s, maxentArray!(n,s))
+                    s <- range qbound
+                    return (s, maxentArray!(n,s) * finalWeights dfa!s)
             return (n,cdf)
 
 sampleWordSalad :: (RandomGen g, Ix sigma, MonadState g m) => MaxentProbTransducer sigma -> Cdf Int -> Int -> m [[sigma]]

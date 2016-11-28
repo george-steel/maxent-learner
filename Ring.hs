@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleInstances, UndecidableInstances, GeneralizedNewtypeDeriving, MultiParamTypeClasses #-}
 module Ring ( Additive(..)
-            , Subtractive(..)
+            , AdditiveGroup(..)
             , Semiring(..)
             , Ring
             , RingModule(..)
@@ -25,7 +25,7 @@ class Additive v where
     (⊕) :: v -> v -> v
 
 -- class for additive groups, useful for vectors and rings
-class (Additive v) => Subtractive v where
+class (Additive v) => AdditiveGroup v where
     addinv :: v -> v
     (⊖) :: v -> v -> v
     x ⊖ y = x ⊕ addinv y
@@ -36,10 +36,10 @@ class (Additive r) => Semiring r where-- adition
     (⊗) :: r -> r -> r --multiplication
 
 -- sombines subtraction and multiplication
-class (Semiring r, Subtractive r) => Ring r
+class (Semiring r, AdditiveGroup r) => Ring r
 
 -- adds scalar multiplication
-class (Ring r, Subtractive v) => RingModule r v where
+class (Ring r, AdditiveGroup v) => RingModule r v where
     (⊙) :: r -> v -> v
 
 -- every Ring is a module over itself
@@ -54,7 +54,7 @@ instance Additive () where
 instance Semiring () where
     one = ()
     () ⊗ () = ()
-instance Subtractive () where
+instance AdditiveGroup () where
     addinv () = ()
     () ⊖ () = ()
 instance Ring ()
@@ -74,7 +74,7 @@ instance {-# OVERLAPPABLE #-} (Num r) => Additive r where
 instance {-# OVERLAPPABLE #-} (Num r) => Semiring r where
     one = 1
     (⊗) = (*)
-instance {-# OVERLAPPABLE #-} (Num r) => Subtractive r where
+instance {-# OVERLAPPABLE #-} (Num r) => AdditiveGroup r where
     addinv = negate
     (⊖) = (-)
 instance {-# OVERLAPPABLE #-} (Num r) => Ring r
@@ -88,7 +88,7 @@ instance (Additive r, Additive s) => Additive (r,s) where
 instance (Semiring r, Semiring s) => Semiring (r,s) where
     one = (one,one)
     (a,b) ⊗ (c,d) = (a ⊗ c, b ⊗ d)
-instance (Subtractive r, Subtractive s) => Subtractive (r,s) where
+instance (AdditiveGroup r, AdditiveGroup s) => AdditiveGroup (r,s) where
     addinv (a,b) = (addinv a, addinv b)
     (a,b) ⊖ (c,d) = (a ⊖ c, b ⊖ d)
 instance (Ring r, Ring s) => Ring (r,s)
@@ -99,8 +99,8 @@ instance (RingModule r v, RingModule r w) => RingModule r (v,w) where
 --------------------------------------------------------------------------------
 
 -- take rings as sum or product monoids
-newtype RSum r = RSum r deriving (Ord, Eq, Show, Additive, Subtractive, Semiring, Ring)
-newtype RProd r = RProd r deriving (Ord, Eq, Show, Additive, Subtractive, Semiring, Ring)
+newtype RSum r = RSum r deriving (Ord, Eq, Show, Additive, AdditiveGroup, Semiring, Ring)
+newtype RProd r = RProd r deriving (Ord, Eq, Show, Additive, AdditiveGroup, Semiring, Ring)
 
 instance (Additive r) => Monoid (RSum r) where
     mempty = RSum zero
@@ -148,7 +148,7 @@ instance Additive Vec where
         where lx = V.length xs
               ly = V.length ys
 
-instance Subtractive Vec where
+instance AdditiveGroup Vec where
     addinv (Vec xs) = Vec (V.map negate xs)
 
 instance RingModule Double Vec where
