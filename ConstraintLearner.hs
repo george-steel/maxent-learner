@@ -47,7 +47,7 @@ generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
                 out $ "Selected Constraint " ++ show cl ++  " (score " ++ showFFloat (Just 4) score ")."
                 let newgrammar = cl:grammar
                     newdfa = dfaProduct consMC cdfa dfa
-                out $ "New grammar has " ++ (show . rangeSize . labelBounds $ newdfa) ++ " states."
+                out $ "New grammar has " ++ (show . rangeSize . stateBounds $ newdfa) ++ " states."
                 let oldweights = consVec 0 weights
                     newweights = llpOptimizeWeights wfs newdfa oldweights
                 out $ "Recalculated weights: " ++ showFVec (Just 2) newweights

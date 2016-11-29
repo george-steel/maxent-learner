@@ -206,7 +206,7 @@ instance NFData sigma => NFData (ListGlob sigma) where
 
 -- show in regex format
 instance Show (ListGlob Char) where
-    show (ListGlob isinit isfin parts) = (if isinit then "^" else "") ++ (showGP =<< parts) ++ (if isfin then "$" else "")
+    show (ListGlob isinit isfin parts) = (guard isinit >> "^") ++ (showGP =<< parts) ++ (guard isfin >> "$")
         where showGP (rep, cs) = "[" ++ cs ++ "]" ++ case rep of GSingle -> ""
                                                                  GPlus -> "+"
                                                                  GStar -> "*"

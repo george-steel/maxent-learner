@@ -13,6 +13,7 @@ import Data.List
 import Data.Monoid
 import Control.Monad
 import Control.DeepSeq
+import Control.Arrow
 import qualified Data.Map.Lazy as M
 
 
@@ -117,25 +118,26 @@ classToSeglist ft (NClass isNegated cls) = force $ do
             Just fi <- return (M.lookup fn (featLookup ft))
             return (s,fi)
 
+-- for globs using feature classes instead of segment lists
+data ClassGlob = ClassGlob Bool Bool [(GlobReps, NaturalClass)] deriving (Eq, Ord)
+instance NFData ClassGlob where
+    rnf (ClassGlob isinit isfin gparts) = isinit `seq` isfin `seq` rnf gparts
 
-type NGram = [NaturalClass]
-data Glob = Glob { leftContexts :: [NGram]
-                 , countedSequence :: NGram }
-                 deriving (Eq)
-instance NFData Glob where
-    rnf (Glob ctxs cs) = rnf ctxs `seq` rnf cs
+instance Show ClassGlob where
+    show (ClassGlob isinit isfin parts) = (guard isinit >> "#") ++ (showGP =<< parts) ++ (guard isfin >> "#") where
+        showGP (GStar, NClass False []) = "…"
+        showGP (rep, NClass False [(FPlus,"syllabic")]) = "V" ++ suf rep
+        showGP (rep, NClass False [(FMinus,"syllabic")]) = "C" ++ suf rep
+        showGP (rep, c) = show c ++ suf rep
+        suf GSingle = ""
+        suf GPlus = "₁"
+        suf GStar = "₀"
 
-instance Show Glob where
-    show (Glob ctxs cs) = intercalate "…" (fmap (>>= show) (ctxs ++ [cs]))
+classesToLists :: FeatureTable sigma -> ClassGlob -> ListGlob SegRef
+classesToLists ft (ClassGlob isinit isfin gparts) = ListGlob isinit isfin (fmap (second (classToSeglist ft)) gparts)
 
-countGlobMatches :: FeatureTable sigma -> Glob -> SingleViolationCounter SegRef
-countGlobMatches ft (Glob ctxs cs) = force $ buildDFA ictxs
-    where
-        ictxs = fmap (fmap (classToSeglist ft)) ctxs
-        ics = fmap (classToSeglist ft) cs
-        buildDFA gs = foldr gateLeftContext (countngrams (srBounds ft) ics) gs
-
-
+cgMatchCounter :: FeatureTable sigma -> ClassGlob -> SingleViolationCounter SegRef
+cgMatchCounter ft = matchCounter (srBounds ft) . classesToLists ft
 
 
 ngrams  :: Int -> [a] -> [[a]]
@@ -149,7 +151,7 @@ ngrams  n  (x:xs)  = fmap (x:) (ngrams (n-1) xs) ++ ngrams n xs
 classesByGenerality :: FeatureTable sigma -> Int -> [(Int, NaturalClass)]
 classesByGenerality ft maxfeats = force $ fmap (\((ns, _), c) -> (ns,c)) (M.assocs cls)
     where
-        cls = M.fromListWith (flip const) $ do
+        cls = M.fromListWith (const id) $ do
             isInv <- [False,True]
             nf <- range (0, maxfeats)
             fs <- ngrams nf (elems (featNames ft))
@@ -178,7 +180,7 @@ multiTake (n:ns) xs = take n xs : multiTake ns (drop n xs)
 
 
 -- UG functions to generate list of constraint candidates
-
+{-
 localTrigramGlobs :: [(Int, NaturalClass)] -> [NaturalClass] -> [Glob]
 localTrigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubles ++ tripples
     where
@@ -209,21 +211,22 @@ localTrigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubl
                         guard (not (isInverted cls1 && isInverted cls2))
                         return (w1+w2, cls3')
             return ((3,w), Glob [] [cls1,cls2,cls3])
-
-localBigramGlobs :: [(Int, NaturalClass)] -> [NaturalClass] -> [Glob]
+-}
+localBigramGlobs :: [(Int, NaturalClass)] -> [NaturalClass] -> [ClassGlob]
 localBigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubles
     where
         singles = do
             (w,cls) <- classes
-            let g = Glob [] [cls]
+            let g = ClassGlob False False [(GSingle,cls)]
             guard (not (isInverted cls))
             return ((1,w),g)
         doubles = do
             (w1,cls1) <- classes
             (w2,cls2) <- classes
             guard (not (isInverted cls1 && isInverted cls2))
-            return ((2,w1+w2), Glob [] [cls1,cls2])
+            return ((2,w1+w2), ClassGlob False False [(GSingle, cls1),(GSingle,cls2)])
 
+{-
 nonlocalTrigramGlobs :: [(Int, NaturalClass)] -> [NaturalClass] -> [Glob]
 nonlocalTrigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubles ++ brokendoubles ++ tripples
     where
@@ -269,3 +272,4 @@ nonlocalNGrams maxStars maxClasses candidateClasses = fmap snd . sortOn fst $ do
     ns <- partitionLength nc maxStars
     let ngs = multiTake ns cls
     return ((nc + length ngs, totalscore), Glob (init ngs) (last ngs))
+-}

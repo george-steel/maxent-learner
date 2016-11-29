@@ -58,7 +58,7 @@ c2 = countngrams ('a','d') ["b","abd"]
 
 abcCandidates = fmap (id &&& countngrams ('a','d')) [["a","a"], ["c","c"],["b","abd"], ["d","ac"]]
 
-g2 = dfaProduct consMC c2 (mapweights singleMC c1)
+g2 = dfaProduct consMC c2 (fmap singleMC c1)
 
 abcViols = observedViolations g2 abcLex
 
@@ -73,11 +73,7 @@ onsetCoreClasses = fmap (NClass False . return) [(FPlus,"consonantal"),
                                                  (FPlus,"sonorant"),
                                                  (FMinus,"sonorantsonorant")]
 
-onsetCandidates = fmap (id &&& countGlobMatches onsetft) $ localTrigramGlobs onsetClasses onsetCoreClasses
-
-ocg1 = Glob [] [NClass True [(FMinus, "voice"),(FPlus, "anterior"),(FPlus, "strident")], NClass False [(FMinus, "approximant")]]
-oc1 = countGlobMatches onsetft ocg1
-og1 = mapweights singleMC oc1
+onsetCandidates = fmap (id &&& cgMatchCounter onsetft) $ localBigramGlobs onsetClasses onsetCoreClasses
 
 main = do
     evaluate $ force onsetCandidates
