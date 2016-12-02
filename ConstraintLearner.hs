@@ -12,23 +12,17 @@ import Control.DeepSeq
 import Data.Ix
 import Numeric
 
--- calculate accuracy score of constraint given the grammar so far
-evaluateConstraint :: (Ix sigma) => Lexicon sigma -> Lexicon sigma -> SingleViolationCounter sigma -> Double
-evaluateConstraint wfs salad dfa = upperConfidenceOE o e
-    where
-        o = observedViolationsSingle dfa wfs
-        e = observedViolationsSingle dfa salad * fromIntegral (totalWords wfs) / fromIntegral (totalWords salad)
 
 -- main function to learn a list fo constraints,
 generateGrammar :: forall g m clabel sigma . (RandomGen g, MonadState g m, Show clabel, Ix sigma, NFData sigma, NFData sigma, Eq clabel) -- In the typical case, m = StateT g IO, clabel = Glob, sigma = SegRef
     => (String -> m ()) -- function to log messages. (liftIO . putStrLn), write, and void are all good canduidates
     -> Int -- Monte Carlo sample size
     -> [Double] -- list of accuracy thresholds
-    -> [(clabel, SingleViolationCounter sigma)] -- list of constraints to try in order. Each constraint has a label and a dfa to compute it
+    -> [(clabel, ShortDFST sigma)] -- list of constraints to try in order. Each constraint has a label and a dfa to compute it
     -> Lexicon sigma -- List of words to try and their frequencies
     -> m [(clabel, Double)] -- computed grammar
 generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
-    let blankdfa = (nildfa . segBounds . snd . head $ possibleConstraints)
+    let blankdfa = (nildfa . segBounds . unpackShortDFST . snd . head $ possibleConstraints)
         lendist = lengthCdf wfs
 
         chooseConstraints :: Double -- accuracy
@@ -36,17 +30,19 @@ generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
                           -> MaxentViolationCounter sigma -- DFA of grammar so fat
                           -> Vec -- weights
                           -> Lexicon sigma -- word salad for evaluating expectations
-                          -> [(clabel, SingleViolationCounter sigma)] -- candidates left
+                          -> [(clabel, ShortDFST sigma)] -- candidates left
                           -> m ([clabel], MaxentViolationCounter sigma, Vec)
         chooseConstraints _ grammar dfa weights _ [] = do
             out "Pass complete."
             return (grammar, dfa, weights)
         chooseConstraints accuracy grammar dfa weights salad ((cl,cdfa):cs)
-            | score > accuracy || cl `elem` grammar = chooseConstraints accuracy grammar dfa weights salad cs
+            | score > accuracy || cl `elem` grammar = do
+                --out $ "Rejected " ++ show cl ++ " " ++ showFFloat (Just 4) score [] ++ ": " ++ ([o,o',e] >>= (\f -> showFFloat (Just 0) f " "))
+                chooseConstraints accuracy grammar dfa weights salad cs
             | otherwise = do
-                out $ "Selected Constraint " ++ show cl ++  " (score " ++ showFFloat (Just 4) score ")."
+                out $ "Selected Constraint " ++ show cl ++  " (score " ++ showFFloat (Just 4) score [] ++ ", o=" ++ showFFloat (Just 1) o [] ++ ", e=" ++ showFFloat (Just 1) e [] ++ ")."
                 let newgrammar = cl:grammar
-                    newdfa = dfaProduct consMC cdfa dfa
+                    newdfa = dfaProduct consMC (unpackShortDFST cdfa) dfa
                 out $ "New grammar has " ++ (show . rangeSize . stateBounds $ newdfa) ++ " states."
                 let oldweights = consVec 0 weights
                     newweights = llpOptimizeWeights wfs newdfa oldweights
@@ -56,7 +52,10 @@ generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
                 -- out $ "Generated new salad."
                 chooseConstraints accuracy newgrammar newdfa newweights newsalad cs
             where
-                score = evaluateConstraint wfs salad cdfa
+                score = upperConfidenceOE o e
+                o = observedViolationsSingle cdfa wfs
+                o' = observedViolationsSingle cdfa salad
+                e = o' * fromIntegral (totalWords wfs) / fromIntegral (totalWords salad)
 
         accuracyPass :: [clabel] -- grammar do far
                      -> MaxentViolationCounter sigma -- DFA of grammar so fat
@@ -90,7 +89,7 @@ To generate a constraint candidate list, several UG functions are contained in t
 -}
 generateGrammarIO :: (Ix sigma, Show clabel, Eq clabel, NFData sigma) => Int -- Monte Carlo sample size
     -> [Double] -- list of accuract thresholds
-    -> [(clabel, SingleViolationCounter sigma)] -- list of constraints to try in order. Each constraint has a label and a dfa to compute it
+    -> [(clabel, ShortDFST sigma)] -- list of constraints to try in order. Each constraint has a label and a dfa to compute it
     -> Lexicon sigma -- List of words to try and their frequencies
     -> IO [(clabel, Double)]
 generateGrammarIO samplesize thresholds (possibleConstraints) wfs = do

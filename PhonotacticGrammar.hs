@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, GeneralizedNewtypeDeriving, OverloadedStrings #-}
 module PhonotacticGrammar where
 
 import Ring
@@ -14,6 +14,7 @@ import Data.Monoid
 import Control.Monad
 import Control.DeepSeq
 import Control.Arrow
+import qualified Data.Text as T
 import qualified Data.Map.Lazy as M
 
 
@@ -26,17 +27,19 @@ instance NFData FeatureState where
 newtype SegRef = Seg Int deriving (Eq, Ord, Read, Show, Ix, NFData)
 
 data FeatureTable sigma = FeatureTable { featTable :: Array (SegRef,Int) FeatureState
-                                       , featNames :: Array Int String
+                                       , featNames :: Array Int T.Text
                                        , segNames :: Array SegRef sigma
-                                       , featLookup :: M.Map String Int
+                                       , featLookup :: M.Map T.Text Int
                                        , segLookup :: M.Map sigma SegRef } deriving (Show)
 
 -- segment references
 srBounds :: FeatureTable sigma -> (SegRef, SegRef)
 srBounds ft = bounds (segNames ft)
+{-# INLINE srBounds #-}
 
 ftlook :: FeatureTable sigma -> SegRef -> Int -> FeatureState
 ftlook ft sr fi = featTable ft ! (sr,fi)
+{-# INLINE ftlook #-}
 
 -- convert a string of raw segments to a string of SrgRefs
 segsToRefs :: (Ord sigma) => FeatureTable sigma -> [sigma] -> [SegRef]
@@ -66,7 +69,7 @@ csvToFeatureTable readSeg rawcsv = do
         featrecs = filter (\xs -> length xs == numsegs + 1) rawfeatrecs
         numfeats = length featrecs
     guard (numfeats > 0)
-    let featlist = listArray (1, numfeats) (fmap head featrecs)
+    let featlist = listArray (1, numfeats) (fmap (T.pack . head) featrecs)
         ft       = array ((Seg 1,1), (Seg numsegs, numfeats)) $ do
                         (featidx, _:featdata) <- zip [1..] featrecs
                         (segidx, segfield) <- zip (fmap Seg [1..]) featdata
@@ -83,7 +86,7 @@ csvToFeatureTable readSeg rawcsv = do
 
 
 
-allFeatures :: FeatureTable sigma -> [String]
+allFeatures :: FeatureTable sigma -> [T.Text]
 allFeatures ft = elems (featNames ft)
 
 
@@ -91,7 +94,7 @@ allFeatures ft = elems (featNames ft)
 
 
 data NaturalClass = NClass { isInverted :: Bool
-                           , featureList :: [(FeatureState, String)]
+                           , featureList :: [(FeatureState, T.Text)]
                            } deriving (Eq, Ord)
 instance NFData NaturalClass where
     rnf c@(NClass b fs) = b `seq` rnf fs
@@ -102,7 +105,7 @@ instance Show NaturalClass where
                                         FPlus -> "+"
                                         FMinus -> "−"
                                         FOff -> "0")
-                                  ++ fn
+                                  ++ T.unpack fn
 
 xor :: Bool -> Bool -> Bool
 xor False p = p
@@ -136,7 +139,7 @@ instance Show ClassGlob where
 classesToLists :: FeatureTable sigma -> ClassGlob -> ListGlob SegRef
 classesToLists ft (ClassGlob isinit isfin gparts) = ListGlob isinit isfin (fmap (second (classToSeglist ft)) gparts)
 
-cgMatchCounter :: FeatureTable sigma -> ClassGlob -> SingleViolationCounter SegRef
+cgMatchCounter :: FeatureTable sigma -> ClassGlob -> ShortDFST SegRef
 cgMatchCounter ft = matchCounter (srBounds ft) . classesToLists ft
 
 
@@ -145,11 +148,23 @@ ngrams  0  _       = [[]]
 ngrams  _  []      = []
 ngrams  n  (x:xs)  = fmap (x:) (ngrams (n-1) xs) ++ ngrams n xs
 
+
+
+
+
+{-------------------------------------------------------------------------------
+
+UNIVERSAL GRAMMAR FUNCTIONS
+
+Put these together to generate lists of candidate constraints for the learner
+
+-------------------------------------------------------------------------------}
+
 -- Enumerate all classes (and their inverses to a certain number of features
 -- in inverse order of the humber of features the uninverted class contains.
 -- Discards duplicates (having the same set of segments).
-classesByGenerality :: FeatureTable sigma -> Int -> [(Int, NaturalClass)]
-classesByGenerality ft maxfeats = force $ fmap (\((ns, _), c) -> (ns,c)) (M.assocs cls)
+classesByGenerality :: FeatureTable sigma -> Int -> [(Int, NaturalClass, [SegRef])]
+classesByGenerality ft maxfeats = force $ fmap (\((ns, cs), c) -> (ns,c,cs)) (M.assocs cls)
     where
         cls = M.fromListWith (const id) $ do
             isInv <- [False,True]
@@ -162,114 +177,72 @@ classesByGenerality ft maxfeats = force $ fmap (\((ns, _), c) -> (ns,c)) (M.asso
             return ((negate ns, cs), c)
 
 
---------------------------------------------------------------------------------
+ugSingleClasses :: [(Int, NaturalClass,[SegRef])] -> [(ClassGlob, ListGlob SegRef)]
+ugSingleClasses cls = fmap snd . sortOn fst $ do
+    (w,c,l) <- cls
+    guard (not (isInverted c))
+    let g = ClassGlob False False [(GSingle,c)]
+        lg = ListGlob False False [(GSingle,l)]
+    return (w,(g,lg))
 
-partitionLength :: Int -> Int -> [[Int]]
-partitionLength n 0 = return [n]
-partitionLength 0 _ = return []
-partitionLength 1 _ = return [1]
-partitionLength n b = do
-    k <- range (1,n)
-    ks <- partitionLength (n-k) (b-1)
-    return (k:ks)
+ugEdgeClasses :: [(Int, NaturalClass,[SegRef])] -> [(ClassGlob, ListGlob SegRef)]
+ugEdgeClasses cls = fmap snd . sortOn fst $ do
+    (w,c,l) <- cls
+    guard (not (isInverted c))
+    (isinit,isfin) <- [(False,True),(True,False)]
+    let g = ClassGlob isinit isfin [(GSingle,c)]
+        lg = ListGlob isinit isfin [(GSingle,l)]
+    return (w,(g,lg))
 
-multiTake :: [Int] -> [a] -> [[a]]
-multiTake [] _ = []
-multiTake _ [] = []
-multiTake (n:ns) xs = take n xs : multiTake ns (drop n xs)
+ugBigrams :: [(Int, NaturalClass,[SegRef])] -> [(ClassGlob, ListGlob SegRef)]
+ugBigrams cls = fmap snd . sortOn fst $ do
+    (w1,c1,l1) <- cls
+    (w2,c2,l2) <- cls
+    guard (not (isInverted c1 && isInverted c2))
+    let g = ClassGlob False False [(GSingle,c1),(GSingle,c2)]
+        lg = ListGlob False False [(GSingle,l1),(GSingle,l2)]
+    return (w1+w2,(g,lg))
+
+ugEdgeBigrams :: [(Int, NaturalClass,[SegRef])] -> [(ClassGlob, ListGlob SegRef)]
+ugEdgeBigrams cls = fmap snd . sortOn fst $ do
+    (w1,c1,l1) <- cls
+    (w2,c2,l2) <- cls
+    guard (not (isInverted c1 && isInverted c2))
+    (isinit,isfin) <- [(False,True),(True,False)]
+    let g = ClassGlob isinit isfin [(GSingle,c1),(GSingle,c2)]
+        lg = ListGlob isinit isfin [(GSingle,l1),(GSingle,l2)]
+    return (w1+w2,(g,lg))
+
+ugLimitedTrigrams :: [(Int, NaturalClass,[SegRef])] -> [(NaturalClass,[SegRef])] -> [(ClassGlob, ListGlob SegRef)]
+ugLimitedTrigrams cls rcls = fmap snd . sortOn fst $ do
+    (w1,c1,l1) <- cls
+    (w2,c2,l2) <- cls
+    (w,c3,l3) <- case () of
+         () | (c1,l1) `elem` rcls -> do
+                (w3,c3',l3') <- cls
+                guard (not (isInverted c2 && isInverted c3'))
+                return (w2+w3, c3',l3')
+            | (c2,l2) `elem` rcls -> do
+                (w3,c3',l3') <- cls
+                guard (not (isInverted c1 && isInverted c3'))
+                return (w1+w3, c3',l3')
+            | otherwise -> do
+                (c3',l3') <- rcls
+                guard (not (isInverted c1 && isInverted c2))
+                return (w1+w2, c3',l3')
+    let g = ClassGlob False False [(GSingle,c1),(GSingle,c2),(GSingle,c3)]
+        lg = ListGlob False False [(GSingle,l1),(GSingle,l2),(GSingle,l3)]
+    return (w, (g,lg))
 
 
--- UG functions to generate list of constraint candidates
-{-
-localTrigramGlobs :: [(Int, NaturalClass)] -> [NaturalClass] -> [Glob]
-localTrigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubles ++ tripples
-    where
-        singles = do
-            (w,cls) <- classes
-            let g = Glob [] [cls]
-            guard (not (isInverted cls))
-            return ((1,w),g)
-        doubles = do
-            (w1,cls1) <- classes
-            (w2,cls2) <- classes
-            guard (not (isInverted cls1 && isInverted cls2))
-            return ((2,w1+w2), Glob [] [cls1,cls2])
-        tripples = do
-            (w1,cls1) <- classes
-            (w2,cls2) <- classes
-            (w,cls3) <- case () of
-                 () | cls1 `elem` coreClasses -> do
-                        (w3,cls3') <- classes
-                        guard (not (isInverted cls2 && isInverted cls3'))
-                        return (w2+w3, cls3')
-                    | cls2 `elem` coreClasses -> do
-                        (w3,cls3') <- classes
-                        guard (not (isInverted cls1 && isInverted cls3'))
-                        return (w1+w3, cls3')
-                    | otherwise -> do
-                        cls3' <- coreClasses
-                        guard (not (isInverted cls1 && isInverted cls2))
-                        return (w1+w2, cls3')
-            return ((3,w), Glob [] [cls1,cls2,cls3])
--}
-localBigramGlobs :: [(Int, NaturalClass)] -> [NaturalClass] -> [ClassGlob]
-localBigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubles
-    where
-        singles = do
-            (w,cls) <- classes
-            let g = ClassGlob False False [(GSingle,cls)]
-            guard (not (isInverted cls))
-            return ((1,w),g)
-        doubles = do
-            (w1,cls1) <- classes
-            (w2,cls2) <- classes
-            guard (not (isInverted cls1 && isInverted cls2))
-            return ((2,w1+w2), ClassGlob False False [(GSingle, cls1),(GSingle,cls2)])
+ugMiddleHayesWilson :: [(Int, NaturalClass,[SegRef])] -> [(NaturalClass,[SegRef])] -> [(ClassGlob, ListGlob SegRef)]
+ugMiddleHayesWilson cls rcls = join [ ugSingleClasses cls
+                                    , ugBigrams cls
+                                    , ugLimitedTrigrams cls rcls]
 
-{-
-nonlocalTrigramGlobs :: [(Int, NaturalClass)] -> [NaturalClass] -> [Glob]
-nonlocalTrigramGlobs classes coreClasses = fmap snd . sortOn fst $ singles ++ doubles ++ brokendoubles ++ tripples
-    where
-        nonlocalpenalty = 1000
-        singles = do
-            (w,cls) <- classes
-            let g = Glob [] [cls]
-            guard (not (isInverted cls))
-            return ((1,w),g)
-        doubles = do
-            (w1,cls1) <- classes
-            (w2,cls2) <- classes
-            guard (not (isInverted cls1 && isInverted cls2))
-            return ((2,w1+w2), Glob [] [cls1,cls2])
-        brokendoubles = do
-            ((_,w), Glob [] [cls1,cls2]) <- doubles
-            guard (not (isInverted cls1) && not (isInverted cls2))
-            return ((2,w+nonlocalpenalty), Glob [[cls1]] [cls2])
-        tripples = do
-            (w1,cls1) <- classes
-            (w2,cls2) <- classes
-            (w,cls3) <- case () of
-                 () | cls1 `elem` coreClasses -> do
-                        (w3,cls3') <- classes
-                        guard (not (isInverted cls2 && isInverted cls3'))
-                        return (w2+w3, cls3')
-                    | cls2 `elem` coreClasses -> do
-                        (w3,cls3') <- classes
-                        guard (not (isInverted cls1 && isInverted cls3'))
-                        return (w1+w3, cls3')
-                    | otherwise -> do
-                        cls3' <- coreClasses
-                        guard (not (isInverted cls1 && isInverted cls2))
-                        return (w1+w2, cls3')
-            return ((3,w), Glob [] [cls1,cls2,cls3])
-
-nonlocalNGrams :: Int -> Int -> [(Int, NaturalClass)] -> [Glob]
-nonlocalNGrams maxStars maxClasses candidateClasses = fmap snd . sortOn fst $ do
-    nc <- range (1,maxClasses)
-    fcls <- replicateM nc candidateClasses
-    let cls = fmap snd fcls
-        totalscore = sum (fmap fst fcls)
-    ns <- partitionLength nc maxStars
-    let ngs = multiTake ns cls
-    return ((nc + length ngs, totalscore), Glob (init ngs) (last ngs))
--}
+ugEdgeHayesWilson :: [(Int, NaturalClass,[SegRef])] -> [(NaturalClass,[SegRef])] -> [(ClassGlob, ListGlob SegRef)]
+ugEdgeHayesWilson cls rcls = join [ ugSingleClasses cls
+                                  , ugEdgeClasses cls
+                                  , ugBigrams cls
+                                  , ugEdgeBigrams cls
+                                  , ugLimitedTrigrams cls rcls]

@@ -96,5 +96,5 @@ uniformSample (Cdf cmf) n = zipWith subentries (tail breaks ++ [(undefined, n)])
 upperConfidenceOE :: Double -> Double -> Double
 upperConfidenceOE o e = if p >= 1 then 1 else min 1 (p + 3*v)
     where
-        p = (o + 0.5) / (e+1)
+        p = (o + 1.5) / (e+1)
         v = sqrt (p * (1-p) / (e+1))

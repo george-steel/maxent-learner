@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell, OverloadedStrings #-}
 import Ring
 import Probability
 import WeightedDFA
@@ -20,6 +20,7 @@ import Text.Read
 import Control.Exception (evaluate)
 import Control.DeepSeq
 
+import Control.Parallel.Strategies
 import Data.FileEmbed
 
 ftcsv :: String
@@ -41,6 +42,14 @@ onsetLex = sortLexicon $ do
     Just n <- return $ readMaybe sn
     return (segsToRefs onsetft (words sw), n)
 
+shonaFT = fromJust (csvToFeatureTable id $(embedStringFile "./testcases/ShonaFeatures.csv"))
+shonaLex = sortLexicon $ do
+    line <- lines $(embedStringFile "./testcases/ShonaLearningData.txt")
+    let (sw,sn') = break (== '\t') line
+    [sn] <- return (words sn')
+    Just n <- return $ readMaybe sn
+    return (segsToRefs shonaFT (words sw), n)
+{-
 abcLex = sortLexicon [ ("abc", 1000)
                      , ("abcd", 1000)
                      , ("acbc", 2000)
@@ -71,12 +80,28 @@ onsetClasses = classesByGenerality onsetft 3
 onsetCoreClasses = fmap (NClass False . return) [(FPlus,"consonantal"),
                                                  (FMinus,"consonantal"),
                                                  (FPlus,"sonorant"),
-                                                 (FMinus,"sonorantsonorant")]
+                                                 (FMinus,"sonorant")]
 
-onsetCandidates = fmap (id &&& cgMatchCounter onsetft) $ localBigramGlobs onsetClasses onsetCoreClasses
+onsetCandidates = fmap (id &&& cgMatchCounter onsetft) $ ugMiddleHayesWilson onsetClasses onsetCoreClasses
+-}
+
+shonaClasses = classesByGenerality shonaFT 3
+shonaCoreClasses = fmap ((id &&& classToSeglist shonaFT) . NClass False) [[],
+                                        [(FPlus,"syllabic")],
+                                        [(FMinus,"syllabic")],
+                                        [(FPlus,"consonantal")],
+                                        [(FMinus,"consonantal")],
+                                        [(FPlus,"sonorant")],
+                                        [(FMinus,"sonorant")]]
 
 main = do
-    evaluate $ force onsetCandidates
-    putStrLn "Computed UG."
-    grammar <- generateGrammarIO 3000 [0.001, 0.01, 0.1, 0.2, 0.3] onsetCandidates onsetLex
+    evaluate $ force shonaClasses
+    putStrLn $ "Generating grammar using " ++ show (length shonaClasses) ++ " classes."
+    let shonaGlobs = ugMiddleHayesWilson shonaClasses shonaCoreClasses
+    evaluate $ force shonaGlobs
+    putStrLn $ "Generated " ++ show (length shonaGlobs) ++ " globs, computing DFAs."
+    let shonaCandidates = fmap (force . (id *** matchCounter (srBounds shonaFT))) shonaGlobs `using` (parListChunk 1000 rdeepseq)
+    evaluate $ force shonaCandidates
+    putStrLn $ "Computed UG."
+    grammar <- generateGrammarIO 3000 [0.01, 0.1, 0.2, 0.3] shonaCandidates shonaLex
     putStrLn . unlines . fmap show $ grammar

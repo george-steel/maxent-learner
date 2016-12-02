@@ -8,6 +8,7 @@ module Ring ( Additive(..)
             , sumR, productR
             , Vec(..), coords, fromInts, vec
             , innerProd, normVec, normalizeVec, consVec
+            , l1Vec, dl1Vec
             , showFVec
             ) where
 
@@ -165,6 +166,11 @@ showFVec prec (Vec xs) = "[" ++ (unwords . fmap (\x -> showFFloat prec x []) . V
 
 normVec :: Vec -> Double
 normVec x = sqrt (innerProd x x)
+
+l1Vec :: Vec -> Double
+l1Vec (Vec xs) = V.sum (V.map abs xs)
+dl1Vec :: Vec -> Vec
+dl1Vec (Vec xs) = Vec (V.map signum xs)
 
 normalizeVec :: Vec -> Vec
 normalizeVec x = if n == 0 then x else (1/n) ⊙ x

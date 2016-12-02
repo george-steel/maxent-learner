@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, GeneralizedNewtypeDeriving, FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, GeneralizedNewtypeDeriving, FlexibleInstances, BangPatterns #-}
 
 module WeightedDFA where
 
@@ -9,20 +9,23 @@ import Data.Ix
 import Data.Array.IArray
 import Data.Array.MArray
 import Data.Array.ST
-import Data.Array.Unboxed ()
+import Data.Array.Unboxed
 import Data.List
 import Data.Bits
 import Data.Monoid
+import Data.Int
+import Control.Arrow ((***), (&&&))
 import Ring
 
 -- initialize an array by caching a function
 fnArray :: (Ix i, IArray a e) => (i,i) -> (i -> e) -> a i e
 fnArray bds f = array bds (fmap (\x -> (x, f x)) (range bds))
+{-# INLINE fnArray #-}
 
 -- turns a pair of interval tuples into an interval of pairs
 xbd :: (a,a) -> (b,b) -> ((a,b), (a,b))
 xbd (w,x) (y,z) = ((w,y), (x,z))
-
+{-# INLINE xbd #-}
 
 
 
@@ -53,6 +56,10 @@ transition (DFST _ arr _) s c = arr!(s,c)
 advanceState :: (Ix q, Ix sigma) => DFST q sigma k -> q -> sigma -> q
 advanceState (DFST _ arr _) s c = fst (arr!(s,c))
 
+{-# INLINE stateBounds #-}
+{-# INLINE segBounds #-}
+{-# INLINE transition #-}
+{-# INLINE advanceState #-}
 
 instance (Ix q, Ix sigma) => Functor (DFST q sigma) where
     fmap f (DFST q0 tm fw) = DFST q0 (fmap (fmap f) tm) (fmap f fw)
@@ -125,60 +132,73 @@ transduceR :: (Ix q, Ix sigma, Semiring k) => DFST q sigma k -> [sigma] -> k
 transduceR (DFST q0 tm fw) cs = productR ws ⊗ (fw ! fq)
     where (fq, ws) = mapAccumL (curry (tm!)) q0 cs
 
--- creates a transducer to count occurrences of an n-gram.
--- Takes a sequence of classes each reperesented as a list of segments
-countngrams :: forall sigma . (Ix sigma) => (sigma, sigma) -> [[sigma]] -> DFST Int sigma (Sum Int)
-countngrams sbound classes = pruneUnreachable (DFST 0 tm fw)
-    where
-        n = length classes
-        cls :: Array Int [sigma]
-        cls = listArray (1,n) classes
-        states = range (0, 2^(n-1) - 1)
-        tm :: Array (Int, sigma) (Int, Sum Int)
-        tm = array ((0, fst sbound), (2^(n-1) - 1, snd sbound)) $ do
-            s <- states
-            c <- range sbound
-            let ns = sum $ do
-                    b <- range (1, n-1)
-                    guard (b == 1 || testBit s (b-2))
-                    guard (c `elem` (cls!b))
-                    return (2^(b-1))
-                isfinal = (n == 1 || testBit s (n-2)) && (c `elem` (cls!n))
-                w = Sum (if isfinal then 1 else 0)
-            return ((s,c),(ns,w))
-        fw = fnArray (0, 2^(n-1) - 1) (const mempty)
 
-{- NO LONGER IN USE, USE ListGlob INSTEAD
-gateLeftContext :: forall sigma w . (Ix sigma, Monoid w) => [[sigma]] -> DFST Int sigma w -> DFST Int sigma w
-gateLeftContext classes olddfa@(DFST oldarr) = pruneUnreachable (DFST mergedarr)
+-- optimized version specialized to integers
+data ShortDFST sigma = ShortDFST {-# UNPACK #-} !Int16
+                             !(UArray (Int16,sigma) Int16) -- state transitions
+                             !(UArray (Int16,sigma) Int16) -- weight transitions
+                             !(UArray Int16 Int16) -- final weights
+                             deriving (Show)
+
+instance NFData (ShortDFST sigma) where
+    rnf (ShortDFST q0 tf tw fw) = q0 `seq` tf `seq` tw `seq` fw `seq` ()
+
+
+
+transduceZ :: (Ix sigma) => ShortDFST sigma -> [sigma] -> Int16
+transduceZ (ShortDFST q0 tf tw fw) = go q0 0
+    where go !q !acc [] = acc + (fw ! q)
+          go !q !acc (x:xs) = go (tf ! (q,x)) (acc + (tw ! (q,x))) xs
+
+packShortDFST :: (Ix sigma) => DFST Int sigma (Sum Int) -> ShortDFST sigma
+packShortDFST (DFST q0 twf fw) = ShortDFST (fromIntegral q0) tf' tw' fw' where
+    tbound = (fromIntegral *** id) *** (fromIntegral *** id) $ bounds twf
+    qbound = fromIntegral *** fromIntegral $ bounds fw
+    tf' = fnArray tbound (fromIntegral . fst . (twf!) . (fromIntegral *** id))
+    tw' = fnArray tbound (fromIntegral . getSum . snd . (twf!) . (fromIntegral *** id))
+    fw' = fnArray qbound (fromIntegral . getSum . (fw!) . fromIntegral)
+
+unpackShortDFST :: (Ix sigma) => ShortDFST sigma -> DFST Int sigma (Sum Int)
+unpackShortDFST (ShortDFST q0 tf tw fw) = DFST (fromIntegral q0) twf' fw' where
+    tbound = (fromIntegral *** id) *** (fromIntegral *** id) $ bounds tf
+    qbound = fromIntegral *** fromIntegral $ bounds fw
+    twf' = fnArray tbound (((fromIntegral . (tf !)) &&& (fromIntegral . (tw !))) . (fromIntegral *** id))
+    fw' = fnArray qbound (fromIntegral . (fw!) . fromIntegral)
+
+pruneAndPack :: forall q sigma k . (Ix q, Ix sigma) => DFST q sigma (Sum Int) -> ShortDFST sigma
+pruneAndPack dfa = force $ ShortDFST (newlabels ! initialState dfa) newTM newTWM newFW
     where
-        sbound = segBounds olddfa
-        n = length classes
-        (oldstart, oldend) = labelBounds olddfa
-        offset = oldstart - 2^(n-1)
-        cls :: Array Int [sigma]
-        cls = listArray (1,n) classes
-        states = range (0, 2^(n-1) - 1)
-        mergedarr :: Array (Int, sigma) (Int, w)
-        mergedarr = array ((offset, fst sbound), (oldend, snd sbound)) $ assocs oldarr ++ do
-            s <- states
-            c <- range sbound
-            let ns = sum $ do
-                    b <- range (1, n-1)
-                    guard (b == 1 || testBit s (b-2))
-                    guard (c `elem` (cls!b))
-                    return (2^(b-1))
-                isfinal = (n == 1 || testBit s (n-2)) && (c `elem` (cls!n))
-                ns' = if isfinal then oldstart else (ns + offset)
-            return ((offset + s,c),(ns',mempty))
--}
+        qbound = stateBounds dfa
+        cbound = segBounds dfa
+        reachable = runSTUArray $ do
+            reached :: STUArray s q Bool <- newArray qbound False
+            let dfs :: q -> ST s ()
+                dfs n = do
+                    writeArray reached n True
+                    forM_ (range cbound) $ \c -> do
+                        let n' = advanceState dfa n c
+                        seen <- readArray reached n'
+                        when (not seen) (dfs n')
+                    return ()
+            dfs (initialState dfa)
+            return reached
+        keepstates :: [q] = filter (reachable!) (range qbound)
+        nbound = (1, fromIntegral (length keepstates))
+        oldlabels :: Array Int16 q = listArray nbound keepstates
+        newlabels :: Array q Int16 = array qbound (zip keepstates (range nbound))
+        tmbound = nbound `xbd` cbound
+        newTF (s,c) = let (t,w) = transition dfa (oldlabels!s) c in newlabels!t
+        newTWF (s,c) = let (t,w) = transition dfa (oldlabels!s) c in fromIntegral (getSum w)
+        newTM = fnArray tmbound newTF
+        newTWM = fnArray tmbound newTWF
+        newFW = fnArray nbound (fromIntegral . getSum . (finalWeights dfa !) . (oldlabels !))
 
 
 -- used for statistical calculations over an entire dfa with ring weights (e.g. probabilities)
 -- given an array mapping states to weights (e.g, a maxent distribution),
 -- gives a new distribution after transducing an additional character
 stepweights :: (Ix q, Ix sigma, Semiring k) => DFST q sigma k -> Array q k -> Array q k
-stepweights dfa@(DFST _ tm _) prev = accumArray (⊕) zero (sbound) (fmap pathweight (range (bounds tm)))
+stepweights dfa@(DFST _ tm _) prev = accumArray (⊕) zero sbound (fmap pathweight (range (bounds tm)))
     where
         sbound = stateBounds dfa
         pathweight (s,c) = let (ns,w) = tm!(s,c) in (ns, (prev!s) ⊗ w)
@@ -212,8 +232,8 @@ instance Show (ListGlob Char) where
                                                                  GStar -> "*"
 
 --
-matchCounter :: forall sigma . (Ix sigma, Show sigma) => (sigma,sigma) -> ListGlob sigma -> DFST Int sigma (Sum Int)
-matchCounter cbound glob@(ListGlob isinit isfin gparts) = pruneUnreachable (DFST (followEpsilons 0) tm fw) where
+matchCounter :: forall sigma . (Ix sigma, Show sigma) => (sigma,sigma) -> ListGlob sigma -> ShortDFST sigma
+matchCounter cbound glob@(ListGlob isinit isfin gparts) = pruneAndPack $ DFST (followEpsilons 0) tm fw where
     ngp = length gparts
     nns = if isfin then ngp + 1 else ngp
     maxq = 2^nns - 1 -- this alo works as a bitmask
@@ -236,7 +256,7 @@ matchCounter cbound glob@(ListGlob isinit isfin gparts) = pruneUnreachable (DFST
             guard (testBit s b)
             return (ntm ! (b,c))
         ns' = ns .&. maxq
-        w = if not isfin && testBit ns ngp then Sum 1 else Sum 0
+        w = if not isfin && testBit ns ngp then 1 else 0
     tm = fnArray tmbound dtf :: Array (Int,sigma) (Int, Sum Int)
-    fwf s = if testBit s ngp then Sum 1 else Sum 0
+    fwf s = if testBit s ngp then 1 else 0
     fw = fnArray (0,maxq) fwf

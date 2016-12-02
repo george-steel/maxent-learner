@@ -85,16 +85,17 @@ observedViolations :: (Ix sigma) => MaxentViolationCounter sigma -> Lexicon sigm
 observedViolations dfa wfs = sumR (fmap countViols . M.assocs . wordFreqs $ wfs)
     where countViols (w,n) = n ⊙ (fromMC . transduceM dfa $ w)
 
-observedViolationsSingle :: (Ix sigma) => SingleViolationCounter sigma -> Lexicon sigma -> Double
+observedViolationsSingle :: (Ix sigma) => ShortDFST sigma -> Lexicon sigma -> Double
 observedViolationsSingle dfa wfs = sum (fmap countViols . M.assocs . wordFreqs $ wfs)
-    where countViols (w,n) = fromIntegral (n * (getSum . transduceM dfa $ w))
+    where countViols (w,n) = fromIntegral (n * fromIntegral (transduceZ dfa w))
 
 
 -- get log probability of lexicon given total violations (taken as a parameter for caching), a violation counter, and a set of weights.
 lexLogProb :: (Ix sigma) => Lexicon sigma -> Vec -> MaxentViolationCounter sigma -> Vec -> Double
 lexLogProb wfs oviols ctr weights = totalViolWeight + totalNormalizer + prior
     where
-        prior = innerProd weights weights / 2
+        --prior = innerProd weights weights / 2
+        prior = l1Vec weights
         probdfa = dropCounts (weightConstraints ctr weights)
         probs = maxentTotals probdfa
         totalViolWeight = innerProd oviols weights
@@ -102,9 +103,10 @@ lexLogProb wfs oviols ctr weights = totalViolWeight + totalNormalizer + prior
 
 -- same as logProb, but also returns its derivative at the weight vector specified.
 lexLogProbTotalDeriv :: (Ix sigma) => Lexicon sigma -> Vec -> MaxentViolationCounter sigma -> Vec -> (Double, Vec)
-lexLogProbTotalDeriv wfs oviols ctr weights = (totalViolWeight + totalNormalizer + prior, oviols ⊕ weights ⊖ expviols)
+lexLogProbTotalDeriv wfs oviols ctr weights = (totalViolWeight + totalNormalizer + prior, oviols ⊕ dl1Vec weights ⊖ expviols)
     where
-        prior = innerProd weights weights / 2
+        --prior = innerProd weights weights / 2
+        prior = l1Vec weights
         edfa = weightConstraints ctr weights
         exps = expectedViolations edfa
         totalViolWeight = innerProd oviols weights
@@ -115,7 +117,7 @@ dotWeights :: Vec -> Expectation Vec-> Expectation Double
 dotWeights ws (Exp p es) = Exp p (innerProd es ws)
 
 lexLogProbPartialDeriv :: (Ix sigma) => Lexicon sigma -> Vec -> MaxentViolationCounter sigma -> Vec -> Vec -> Double
-lexLogProbPartialDeriv wfs oviols ctr weights dir = innerProd weights dir + innerProd dir oviols - expviols
+lexLogProbPartialDeriv wfs oviols ctr weights dir = innerProd (dl1Vec weights) dir + innerProd dir oviols - expviols
     where
         edfa = fmap (dotWeights dir) (weightConstraints ctr weights)
         exps = expectedViolations edfa
