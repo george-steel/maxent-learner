@@ -11,25 +11,30 @@ import Control.Monad.State
 import Control.DeepSeq
 import Data.Ix
 import Numeric
+import Data.IORef
+import System.IO
 
 
 -- main function to learn a list fo constraints,
 generateGrammar :: forall g m clabel sigma . (RandomGen g, MonadState g m, Show clabel, Ix sigma, NFData sigma, NFData sigma, Eq clabel) -- In the typical case, m = StateT g IO, clabel = Glob, sigma = SegRef
-    => (String -> m ()) -- function to log messages. (liftIO . putStrLn), write, and void are all good canduidates
+    => m () -- action to mark progress
+    -> (String -> m ()) -- function to log messages. (liftIO . putStrLn), write, and void are all good canduidates
     -> Int -- Monte Carlo sample size
     -> [Double] -- list of accuracy thresholds
     -> [(clabel, ShortDFST sigma)] -- list of constraints to try in order. Each constraint has a label and a dfa to compute it
     -> Lexicon sigma -- List of words to try and their frequencies
     -> m [(clabel, Double)] -- computed grammar
-generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
-    let blankdfa = (nildfa . segBounds . unpackShortDFST . snd . head $ possibleConstraints)
+generateGrammar prog out samplesize thresholds (possibleConstraints) wfs = do
+    let cbound = shortSegBounds . snd . head $ possibleConstraints
+        blankdfa = nildfa cbound
         lendist = lengthCdf wfs
+        pwfs = packMultiText cbound (wordFreqs wfs)
 
         chooseConstraints :: Double -- accuracy
                           -> [clabel] -- grammar do far
                           -> MaxentViolationCounter sigma -- DFA of grammar so fat
                           -> Vec -- weights
-                          -> Lexicon sigma -- word salad for evaluating expectations
+                          -> PackedText sigma -- word salad for evaluating expectations
                           -> [(clabel, ShortDFST sigma)] -- candidates left
                           -> m ([clabel], MaxentViolationCounter sigma, Vec)
         chooseConstraints _ grammar dfa weights _ [] = do
@@ -38,9 +43,10 @@ generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
         chooseConstraints accuracy grammar dfa weights salad ((cl,cdfa):cs)
             | score > accuracy || cl `elem` grammar = do
                 --out $ "Rejected " ++ show cl ++ " " ++ showFFloat (Just 4) score [] ++ ": " ++ ([o,o',e] >>= (\f -> showFFloat (Just 0) f " "))
+                prog
                 chooseConstraints accuracy grammar dfa weights salad cs
             | otherwise = do
-                out $ "Selected Constraint " ++ show cl ++  " (score " ++ showFFloat (Just 4) score [] ++ ", o=" ++ showFFloat (Just 1) o [] ++ ", e=" ++ showFFloat (Just 1) e [] ++ ")."
+                out $ "\nSelected Constraint " ++ show cl ++  " (score " ++ showFFloat (Just 4) score [] ++ ", o=" ++ showFFloat (Just 1) o [] ++ ", e=" ++ showFFloat (Just 1) e [] ++ ")."
                 let newgrammar = cl:grammar
                     newdfa = dfaProduct consMC (unpackShortDFST cdfa) dfa
                 out $ "New grammar has " ++ (show . rangeSize . stateBounds $ newdfa) ++ " states."
@@ -48,14 +54,14 @@ generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
                     newweights = llpOptimizeWeights wfs newdfa oldweights
                 out $ "Recalculated weights: " ++ showFVec (Just 2) newweights
                 newsalad' <- fmap force $ sampleWordSalad (dropCounts (weightConstraints newdfa newweights)) lendist samplesize
-                let newsalad = sortLexicon . fmap (\x -> (x,1)) $ newsalad'
+                let newsalad = packMultiText cbound . wordFreqs . sortLexicon . fmap (\x -> (x,1)) $ newsalad'
                 -- out $ "Generated new salad."
                 chooseConstraints accuracy newgrammar newdfa newweights newsalad cs
             where
                 score = upperConfidenceOE o e
-                o = observedViolationsSingle cdfa wfs
-                o' = observedViolationsSingle cdfa salad
-                e = o' * fromIntegral (totalWords wfs) / fromIntegral (totalWords salad)
+                o = fromIntegral $ transducePacked cdfa pwfs
+                o' = fromIntegral $ transducePacked cdfa salad
+                e = o' * fromIntegral (totalWords wfs) / fromIntegral samplesize
 
         accuracyPass :: [clabel] -- grammar do far
                      -> MaxentViolationCounter sigma -- DFA of grammar so fat
@@ -69,7 +75,7 @@ generateGrammar out samplesize thresholds (possibleConstraints) wfs = do
             out $ "\n\n"
             out $ "Starting pass with threshold " ++ showFFloat (Just 3) acc ""
             salad' <- sampleWordSalad (dropCounts (weightConstraints dfa weights)) lendist samplesize
-            let salad = sortLexicon . fmap (\x -> (x,1)) $ salad'
+            let salad = packMultiText cbound . wordFreqs . sortLexicon . fmap (\x -> (x,1)) $ salad'
             (newgrammar, newdfa, newweights) <- chooseConstraints acc grammar dfa weights salad possibleConstraints
             accuracyPass newgrammar newdfa newweights accs
 
@@ -93,5 +99,12 @@ generateGrammarIO :: (Ix sigma, Show clabel, Eq clabel, NFData sigma) => Int -- 
     -> Lexicon sigma -- List of words to try and their frequencies
     -> IO [(clabel, Double)]
 generateGrammarIO samplesize thresholds (possibleConstraints) wfs = do
+    ctr :: IORef Int <- newIORef 0
+    let mark100 = do
+        c <- readIORef ctr
+        when (c `mod` 100 == 0) $ do
+            putStr "#"
+            hFlush stdout
+        modifyIORef' ctr (+1)
     gen <- newStdGen
-    evalStateT (generateGrammar (liftIO . putStrLn) samplesize thresholds (possibleConstraints) wfs) gen
+    evalStateT (generateGrammar (liftIO mark100) (liftIO . putStrLn) samplesize thresholds (possibleConstraints) wfs) gen

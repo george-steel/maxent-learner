@@ -1,4 +1,10 @@
-{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, UndecidableInstances #-}
+{-# LANGUAGE ScopedTypeVariables,
+             ExplicitForAll,
+             MultiParamTypeClasses,
+             FlexibleInstances,
+             FlexibleContexts,
+             UndecidableInstances,
+             BangPatterns #-}
 
 module MaxentGrammar where
 
@@ -7,14 +13,19 @@ import WeightedDFA
 import Probability
 import Data.Array.IArray
 import Data.Array.Unboxed
+import qualified Data.Array.Repa as R
+import Data.Array.Repa (Z(..), (:.)(..))
+import qualified Data.Array.Repa.Repr.Vector as R
 import Control.Monad
 import Control.Monad.State
 --import Control.Monad.Trans.Class
 import Control.Arrow ((&&&),(***))
 import System.Random
-import Data.List
+import Data.List as L
 import Data.Monoid
+import Data.Maybe
 import qualified Data.Map as M
+import qualified Data.Vector.Unboxed as V
 --------------------------------------------------------------------------------
 
 
@@ -61,14 +72,15 @@ type Length = Int
 -- list of words with their frequenceis sorted by length
 data Lexicon sigma = Lex { totalWords :: Int
                          , lengthFreqs :: M.Map Length Int
-                         , wordFreqs :: M.Map [sigma] Int
+                         , wordFreqs :: [([sigma], Int)]
                          } deriving Show
 
 -- convert jumbled list fo words and frequencies to sorted lexicon
 sortLexicon :: (Ord sigma) => [([sigma],Int)] -> Lexicon sigma
-sortLexicon wfs = Lex twords mlengths mwf
+sortLexicon wfs = Lex twords mlengths awf
     where
         mwf = M.fromListWith (+) wfs
+        awf = M.assocs mwf
         mlengths = M.mapKeysWith (+) length mwf
         twords = sum (M.elems mlengths)
 
@@ -82,12 +94,11 @@ lengthPdf wfs = M.assocs . fmap fracOfTotal . lengthFreqs $ wfs
 
 -- count totasl violations of each constraint and return totals (and the total number of words) for each length
 observedViolations :: (Ix sigma) => MaxentViolationCounter sigma -> Lexicon sigma -> Vec
-observedViolations dfa wfs = sumR (fmap countViols . M.assocs . wordFreqs $ wfs)
+observedViolations dfa wfs = foldl' (⊕) zero (fmap countViols (wordFreqs wfs))
     where countViols (w,n) = n ⊙ (fromMC . transduceM dfa $ w)
 
 observedViolationsSingle :: (Ix sigma) => ShortDFST sigma -> Lexicon sigma -> Double
-observedViolationsSingle dfa wfs = sum (fmap countViols . M.assocs . wordFreqs $ wfs)
-    where countViols (w,n) = fromIntegral (n * fromIntegral (transduceZ dfa w))
+observedViolationsSingle dfa wfs = fromIntegral $ transducePacked dfa (packMultiText (shortSegBounds dfa) (wordFreqs wfs))
 
 
 -- get log probability of lexicon given total violations (taken as a parameter for caching), a violation counter, and a set of weights.
@@ -101,9 +112,12 @@ lexLogProb wfs oviols ctr weights = totalViolWeight + totalNormalizer + prior
         totalViolWeight = innerProd oviols weights
         totalNormalizer = sum . fmap (\(l,n) -> n ⊙ log (probs !! l)) . M.assocs . lengthFreqs $ wfs
 
+priorDeriv (Vec !weights) (Vec !dlp) = Vec $ V.zipWith (\w d -> if w < 0.01 then min (d+1) 0 else d+1) weights dlp
+{-# INLINE priorDeriv #-}
+
 -- same as logProb, but also returns its derivative at the weight vector specified.
 lexLogProbTotalDeriv :: (Ix sigma) => Lexicon sigma -> Vec -> MaxentViolationCounter sigma -> Vec -> (Double, Vec)
-lexLogProbTotalDeriv wfs oviols ctr weights = (totalViolWeight + totalNormalizer + prior, oviols ⊕ dl1Vec weights ⊖ expviols)
+lexLogProbTotalDeriv !wfs !oviols !ctr !weights = (totalViolWeight + totalNormalizer + prior, priorDeriv weights (oviols ⊖ expviols))
     where
         --prior = innerProd weights weights / 2
         prior = l1Vec weights
@@ -132,7 +146,7 @@ lexLogProbPartialDeriv wfs oviols ctr weights dir = innerProd (dl1Vec weights) d
 -- for efficiency, evaluate this once than sequence the action repeatedly as intermediate values will be memoized.
 sampleWord :: forall g sigma m . (RandomGen g, Ix sigma, MonadState g m) => MaxentProbTransducer sigma -> Int -> (Int -> m [sigma])
 sampleWord dfa maxn = backDists `seq` \n -> do
-        fs <- samplecdf (finalStates !n)
+        fs <- samplecdf (finalStates ! n)
         rcs <- flip evalStateT fs . forM (reverse . range $ (1,n)) $ \k -> do
             s <- get
             (c,s') <- lift . samplecdf $ backDists!(k,s)

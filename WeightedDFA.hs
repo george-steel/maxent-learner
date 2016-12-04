@@ -1,4 +1,5 @@
-{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, GeneralizedNewtypeDeriving, FlexibleInstances, BangPatterns #-}
+{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, GeneralizedNewtypeDeriving, FlexibleInstances, BangPatterns, FlexibleContexts, ForeignFunctionInterface #-}
+{-# INCLUDE "shortdfa.h "#-}
 
 module WeightedDFA where
 
@@ -10,6 +11,9 @@ import Data.Array.IArray
 import Data.Array.MArray
 import Data.Array.ST
 import Data.Array.Unboxed
+import qualified Data.Vector.Storable as SV
+import Foreign (Ptr)
+import System.IO.Unsafe
 import Data.List
 import Data.Bits
 import Data.Monoid
@@ -132,68 +136,6 @@ transduceR :: (Ix q, Ix sigma, Semiring k) => DFST q sigma k -> [sigma] -> k
 transduceR (DFST q0 tm fw) cs = productR ws ⊗ (fw ! fq)
     where (fq, ws) = mapAccumL (curry (tm!)) q0 cs
 
-
--- optimized version specialized to integers
-data ShortDFST sigma = ShortDFST {-# UNPACK #-} !Int16
-                             !(UArray (Int16,sigma) Int16) -- state transitions
-                             !(UArray (Int16,sigma) Int16) -- weight transitions
-                             !(UArray Int16 Int16) -- final weights
-                             deriving (Show)
-
-instance NFData (ShortDFST sigma) where
-    rnf (ShortDFST q0 tf tw fw) = q0 `seq` tf `seq` tw `seq` fw `seq` ()
-
-
-
-transduceZ :: (Ix sigma) => ShortDFST sigma -> [sigma] -> Int16
-transduceZ (ShortDFST q0 tf tw fw) = go q0 0
-    where go !q !acc [] = acc + (fw ! q)
-          go !q !acc (x:xs) = go (tf ! (q,x)) (acc + (tw ! (q,x))) xs
-
-packShortDFST :: (Ix sigma) => DFST Int sigma (Sum Int) -> ShortDFST sigma
-packShortDFST (DFST q0 twf fw) = ShortDFST (fromIntegral q0) tf' tw' fw' where
-    tbound = (fromIntegral *** id) *** (fromIntegral *** id) $ bounds twf
-    qbound = fromIntegral *** fromIntegral $ bounds fw
-    tf' = fnArray tbound (fromIntegral . fst . (twf!) . (fromIntegral *** id))
-    tw' = fnArray tbound (fromIntegral . getSum . snd . (twf!) . (fromIntegral *** id))
-    fw' = fnArray qbound (fromIntegral . getSum . (fw!) . fromIntegral)
-
-unpackShortDFST :: (Ix sigma) => ShortDFST sigma -> DFST Int sigma (Sum Int)
-unpackShortDFST (ShortDFST q0 tf tw fw) = DFST (fromIntegral q0) twf' fw' where
-    tbound = (fromIntegral *** id) *** (fromIntegral *** id) $ bounds tf
-    qbound = fromIntegral *** fromIntegral $ bounds fw
-    twf' = fnArray tbound (((fromIntegral . (tf !)) &&& (fromIntegral . (tw !))) . (fromIntegral *** id))
-    fw' = fnArray qbound (fromIntegral . (fw!) . fromIntegral)
-
-pruneAndPack :: forall q sigma k . (Ix q, Ix sigma) => DFST q sigma (Sum Int) -> ShortDFST sigma
-pruneAndPack dfa = force $ ShortDFST (newlabels ! initialState dfa) newTM newTWM newFW
-    where
-        qbound = stateBounds dfa
-        cbound = segBounds dfa
-        reachable = runSTUArray $ do
-            reached :: STUArray s q Bool <- newArray qbound False
-            let dfs :: q -> ST s ()
-                dfs n = do
-                    writeArray reached n True
-                    forM_ (range cbound) $ \c -> do
-                        let n' = advanceState dfa n c
-                        seen <- readArray reached n'
-                        when (not seen) (dfs n')
-                    return ()
-            dfs (initialState dfa)
-            return reached
-        keepstates :: [q] = filter (reachable!) (range qbound)
-        nbound = (1, fromIntegral (length keepstates))
-        oldlabels :: Array Int16 q = listArray nbound keepstates
-        newlabels :: Array q Int16 = array qbound (zip keepstates (range nbound))
-        tmbound = nbound `xbd` cbound
-        newTF (s,c) = let (t,w) = transition dfa (oldlabels!s) c in newlabels!t
-        newTWF (s,c) = let (t,w) = transition dfa (oldlabels!s) c in fromIntegral (getSum w)
-        newTM = fnArray tmbound newTF
-        newTWM = fnArray tmbound newTWF
-        newFW = fnArray nbound (fromIntegral . getSum . (finalWeights dfa !) . (oldlabels !))
-
-
 -- used for statistical calculations over an entire dfa with ring weights (e.g. probabilities)
 -- given an array mapping states to weights (e.g, a maxent distribution),
 -- gives a new distribution after transducing an additional character
@@ -212,39 +154,136 @@ reverseTM :: (Ix q, Ix sigma) => DFST q sigma k -> Array (q,sigma) [(q,k)]
 reverseTM (DFST _ arr _) = accumArray (flip (:)) [] (bounds arr) (fmap (\((s,c),(s',w)) -> ((s',c),(s,w))) (assocs arr))
 
 
+------------------------------------------------------------------------------
+-- structurees for packed DFST counter with compact representation optimized c transduce implementation
+
+
+-- optimized version specialized to integers
+data ShortDFST sigma = ShortDFST {-# UNPACK #-} !Int16 -- number of states
+                                 {-# UNPACK #-} !Int16 -- initial state
+                                 {-# UNPACK #-} !(sigma, sigma) -- segment bounds
+                                 !(SV.Vector Int16) -- state transitions
+                                 !(SV.Vector Int16) -- weight transitions
+                                 !(SV.Vector Int16) -- final weights
+                                 deriving (Show)
+
+shortSegBounds (ShortDFST ns q0 sb tf tw fw) = sb
+
+instance NFData sigma => NFData (ShortDFST sigma) where
+    rnf (ShortDFST ns q0 sb tf tw fw) = ns `seq` q0 `seq` rnf sb `seq` tf `seq` tw `seq` fw `seq` ()
+
+data PackedText sigma = PackedText !(sigma,sigma) !(SV.Vector Int16) !(SV.Vector Int32)
+
+packSingleText :: Ix sigma => (sigma,sigma) -> [sigma] -> PackedText sigma
+packSingleText cbound t = PackedText cbound (SV.fromList $ fmap pchar t ++ [-1,-2]) (SV.singleton 1)
+    where pchar = fromIntegral . index cbound
+
+packMultiText :: Ix sigma => (sigma,sigma) -> [([sigma],Int)] -> PackedText sigma
+packMultiText cbound ts = PackedText cbound (SV.fromList $ foldr constext [-2] ts) (SV.fromList $ fmap (fromIntegral . snd) ts)
+    where constext (t,_) lts  = fmap (fromIntegral . index cbound) t ++ [-1] ++ lts
+
+
+foreign import ccall unsafe "transducePacked" c_transducePacked :: Int16 -> Int16
+                                                                    -> Ptr Int16 -> Ptr Int16 -> Ptr Int16
+                                                                    -> Ptr Int16 -> Ptr Int32
+                                                                    -> IO (Int64)
+
+transducePacked :: (Ix sigma) => ShortDFST sigma -> PackedText sigma -> Int
+transducePacked (ShortDFST ns q0 cb tf tw fw) (PackedText cb' tvec fvec)
+    | cb == cb' = fromIntegral . unsafePerformIO $
+        SV.unsafeWith tf $ \ptf -> SV.unsafeWith tw $ \ptw -> SV.unsafeWith fw $ \pfw ->
+            SV.unsafeWith tvec $ \ptvec -> SV.unsafeWith fvec $ \pfvec ->
+                c_transducePacked ns q0 ptf ptw pfw ptvec pfvec
+    | otherwise = error "Mismatched chatacter bounds in packed text vs DFA"
+
+transduceZ :: Ix sigma => ShortDFST sigma -> [sigma] -> Int
+transduceZ dfa t = transducePacked dfa (packSingleText (shortSegBounds dfa) t)
+
+unpackShortDFST :: forall sigma . (Ix sigma) => ShortDFST sigma -> DFST Int sigma (Sum Int)
+unpackShortDFST (ShortDFST ns q0 cbound tm twm fwm) = DFST (fromIntegral q0) tm' fwm' where
+    qbound :: (Int, Int)
+    qbound = (0, fromIntegral ns - 1)
+    tbound = qbound `xbd` cbound
+    idx :: (Int,sigma) -> Int
+    idx (s,c) = s + fromIntegral ns * index cbound c
+    tf :: Int -> (Int, Sum Int)
+    tf = (fromIntegral . (tm SV.!)) &&& (fromIntegral . (twm SV.!))
+    tm' = fnArray tbound (tf . idx)
+    fwm' = fnArray qbound (fromIntegral . (fwm SV.!) . fromIntegral)
+
+pruneAndPack :: forall q sigma . (Ix q, Ix sigma) => DFST q sigma (Sum Int) -> ShortDFST sigma
+pruneAndPack dfa = ShortDFST (fromIntegral ns) (newlabels ! initialState dfa) cbound newTM newTWM newFW
+    where
+        qbound = stateBounds dfa
+        cbound = segBounds dfa
+        reachable = runSTUArray $ do
+            reached :: STUArray s q Bool <- newArray qbound False
+            let dfs :: q -> ST s ()
+                dfs n = do
+                    writeArray reached n True
+                    forM_ (range cbound) $ \c -> do
+                        let n' = advanceState dfa n c
+                        seen <- readArray reached n'
+                        when (not seen) (dfs n')
+                    return ()
+            dfs (initialState dfa)
+            return reached
+        keepstates :: [q] = filter (reachable!) (range qbound)
+        ns = (length keepstates)
+        nc = rangeSize cbound
+        nbound = (0, fromIntegral (ns - 1))
+        oldlabels :: Array Int16 q = listArray nbound keepstates
+        newlabels :: Array q Int16 = array qbound (zip keepstates (range nbound))
+        tmbound = nbound `xbd` cbound
+        newTF (s,c) = let (t,w) = transition dfa (oldlabels!s) c in newlabels!t
+        newTWF (s,c) = let (t,w) = transition dfa (oldlabels!s) c in fromIntegral (getSum w)
+        unIxc :: Array Int sigma
+        unIxc = array (0,rangeSize cbound - 1) (fmap (index cbound &&& id) (range cbound))
+        oldix i = let (qt,r) = i `quotRem` ns in (fromIntegral r, unIxc ! qt)
+        newTM = SV.generate (ns*nc) (newTF . oldix)
+        newTWM = SV.generate (ns*nc) (newTWF . oldix)
+        newFW = SV.generate ns (fromIntegral . getSum . (finalWeights dfa !) . (oldlabels !) . fromIntegral)
 
 -- quantifiers for globs
 data GlobReps = GSingle | GPlus | GStar deriving (Enum, Eq, Ord, Read, Show)
 instance NFData GlobReps where
     rnf gr = gr `seq` ()
 
--- glob of segment lists, nore generalized version of ngrams allowing for repeated classes as well as single ones.
-data ListGlob sigma = ListGlob Bool Bool [(GlobReps, [sigma])] deriving (Eq, Ord)
+type SegSet sigma = UArray sigma Bool
 
-instance NFData sigma => NFData (ListGlob sigma) where
+-- glob of segment lists, nore generalized version of ngrams allowing for repeated classes as well as single ones.
+data ListGlob sigma = ListGlob Bool Bool [(GlobReps, SegSet sigma)] deriving (Eq, Ord)
+
+instance (IArray UArray e, NFData i, Ix i) => NFData (UArray i e) where
+    rnf a = let b = bounds a in (a ! fst b) `seq` rnf b
+
+instance (NFData sigma, Ix sigma) => NFData (ListGlob sigma) where
     rnf (ListGlob isinit isfin parts) = isinit `seq` isfin `seq` rnf parts
 
 -- show in regex format
 instance Show (ListGlob Char) where
     show (ListGlob isinit isfin parts) = (guard isinit >> "^") ++ (showGP =<< parts) ++ (guard isfin >> "$")
-        where showGP (rep, cs) = "[" ++ cs ++ "]" ++ case rep of GSingle -> ""
-                                                                 GPlus -> "+"
-                                                                 GStar -> "*"
+        where showGP :: (GlobReps, SegSet Char) -> String
+              showGP (rep, cs) = "[" ++ fmap fst (filter snd (assocs cs)) ++ "]" ++
+                                    case rep of GSingle -> ""
+                                                GPlus -> "+"
+                                                GStar -> "*"
 
 --
-matchCounter :: forall sigma . (Ix sigma, Show sigma) => (sigma,sigma) -> ListGlob sigma -> ShortDFST sigma
-matchCounter cbound glob@(ListGlob isinit isfin gparts) = pruneAndPack $ DFST (followEpsilons 0) tm fw where
+matchCounter :: forall sigma . (Ix sigma) => ListGlob sigma -> ShortDFST sigma
+matchCounter (ListGlob isinit isfin gparts) = pruneAndPack $ DFST (followEpsilons 0) tm fw where
+    cbound = bounds . snd . head $ gparts
     ngp = length gparts
     nns = if isfin then ngp + 1 else ngp
     maxq = 2^nns - 1 -- this alo works as a bitmask
     tmbound = (0,maxq) `xbd` cbound
-    gparr = listArray (0,ngp-1) gparts :: Array Int (GlobReps, [sigma])
+    gparr = listArray (0,ngp-1) gparts :: Array Int (GlobReps, SegSet sigma)
     -- glob to nfa using bitmask lists
     followEpsilons b | b >= ngp = bit b
                      | fst (gparr ! b) == GStar = bit b .|. followEpsilons (b+1)
                      | otherwise = bit b
     ntf (b,c) = (if (b == 0) && not isinit then bit 0 .|. followEpsilons 0 else 0)
-                .|. if not (c `elem` snd (gparr ! b)) then 0 else case fst (gparr ! b) of
+                .|. if not (snd (gparr ! b) ! c) then 0 else case fst (gparr ! b) of
                         GSingle -> followEpsilons (b+1)
                         GPlus -> followEpsilons b .|. followEpsilons (b+1)
                         GStar -> followEpsilons b

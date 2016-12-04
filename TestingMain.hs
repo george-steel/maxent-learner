@@ -94,13 +94,17 @@ shonaCoreClasses = fmap ((id &&& classToSeglist shonaFT) . NClass False) [[],
                                         [(FPlus,"sonorant")],
                                         [(FMinus,"sonorant")]]
 
+ugMini :: [(Int, NaturalClass,SegSet SegRef)] -> [(NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
+ugMini cls rcls = join [ ugSingleClasses cls
+                       , ugBigrams cls]
+
 main = do
     evaluate $ force shonaClasses
     putStrLn $ "Generating grammar using " ++ show (length shonaClasses) ++ " classes."
-    let shonaGlobs = ugMiddleHayesWilson shonaClasses shonaCoreClasses
+    let shonaGlobs = ugEdgeHayesWilson shonaClasses shonaCoreClasses
     evaluate $ force shonaGlobs
     putStrLn $ "Generated " ++ show (length shonaGlobs) ++ " globs, computing DFAs."
-    let shonaCandidates = fmap (force . (id *** matchCounter (srBounds shonaFT))) shonaGlobs `using` (parListChunk 1000 rdeepseq)
+    let shonaCandidates = fmap (force . (id *** matchCounter)) shonaGlobs `using` (parListChunk 1000 rdeepseq)
     evaluate $ force shonaCandidates
     putStrLn $ "Computed UG."
     grammar <- generateGrammarIO 3000 [0.01, 0.1, 0.2, 0.3] shonaCandidates shonaLex
