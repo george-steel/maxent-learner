@@ -8,6 +8,7 @@ import qualified Data.Map as M
 import Data.Ix
 import Debug.Trace
 import qualified Data.Vector.Unboxed as V
+import Numeric
 
 -- using conjugate gradient method ad described by Shewchuk in
 -- "An Introduction to the Conjugate Gradient Method Without the Agonizing Pain"
@@ -60,12 +61,16 @@ conjugateGradientSearch (e1, e2) conproj fstar f' start = cjs dims (start ⊕ ve
                 beta' = innerProd grad (oldgrad ⊖ grad) / innerProd oldgrad oldgrad --Polak-Ribière
                 (beta, nbal) = if (bal >= dims || beta' <= 0) then (0,0) else (beta', bal + 1)
                 sdir = (beta ⊙ olddir) ⊖ grad
-                newx = {-traceShow (x,v)-} (regulaFalsiSearch e2 f' x sdir)
+                newxt = regulaFalsiSearch e2 f' x sdir
+                newx = trace (showFFloat (Just 3) beta' " " ++ show bal ++ " " ++ showFVec (Just 3) (newxt ⊖ x)) newxt
                 (newx', iscorr) = conproj newx
                 nbal' = if iscorr then dims else nbal
 
 
 --------------------------------------------------------------------------------
+
+traceVec :: Int -> Vec -> a -> a
+traceVec prec (Vec xs) y = trace ("[" ++ (unwords . fmap (\x -> showFFloat (Just prec) x []) . V.toList $ xs) ++ "]") y
 
 zeroNeg :: Vec -> (Vec, Bool)
 zeroNeg (Vec v) = (Vec (V.map (\x -> if x < 0.01 then 0 else x) v), V.any (\x -> x /= 0 && x < -0.01) v)

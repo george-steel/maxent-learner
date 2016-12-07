@@ -16,6 +16,7 @@ module Ring ( Additive(..)
 --import Data.Monoid
 import Numeric
 import qualified Data.Vector.Unboxed as V
+import Control.DeepSeq
 
 --------------------------------------------------------------------------------
 -- hierarchy of typeclasses for abstract algebra
@@ -127,7 +128,7 @@ instance RingModule Int Double where
 
 -- polynomial-like vector space
 -- behaves like union of R < R² < R³ < …
-newtype Vec = Vec (V.Vector Double) deriving (Eq, Read, Show)
+newtype Vec = Vec (V.Vector Double) deriving (Eq, Read, Show, NFData)
 
 coords :: Vec -> [Double]
 coords (Vec xs) = V.toList xs

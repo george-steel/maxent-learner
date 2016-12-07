@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, UndecidableInstances #-}
+{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, UndecidableInstances, GeneralizedNewtypeDeriving #-}
 module Probability where
 
 import Ring
@@ -9,10 +9,11 @@ import qualified Data.Map as M
 import System.Random
 import Control.Monad.State
 import qualified Data.Vector.Unboxed as V
+import Control.DeepSeq
 
 -- monoid for counting multiple quantities.
 -- Union of the lattices Z < Z^2 < Z^3 < ...
-newtype Multicount = MC (V.Vector Int) deriving (Eq, Show)
+newtype Multicount = MC (V.Vector Int) deriving (Eq, Show, NFData)
 
 getMC :: Multicount -> [Int]
 getMC (MC xs) = V.toList xs

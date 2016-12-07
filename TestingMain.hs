@@ -1,4 +1,4 @@
-{-# LANGUAGE TemplateHaskell, OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell, OverloadedStrings, ParallelListComp #-}
 import Ring
 import Probability
 import WeightedDFA
@@ -19,6 +19,7 @@ import Control.Arrow
 import Text.Read
 import Control.Exception (evaluate)
 import Control.DeepSeq
+import Numeric
 
 import Control.Parallel.Strategies
 import Data.FileEmbed
@@ -98,14 +99,18 @@ ugMini :: [(Int, NaturalClass,SegSet SegRef)] -> [(NaturalClass,SegSet SegRef)] 
 ugMini cls rcls = join [ ugSingleClasses cls
                        , ugBigrams cls]
 
+prettyprintGrammar :: (Show clabel) => [clabel] -> Vec -> String
+prettyprintGrammar grammar weights = unlines [showFFloat (Just 2) w "  " ++ show c | c <- grammar | w <- coords weights]
+
 main = do
     evaluate $ force shonaClasses
     putStrLn $ "Generating grammar using " ++ show (length shonaClasses) ++ " classes."
-    let shonaGlobs = ugEdgeHayesWilson shonaClasses shonaCoreClasses
+    let shonaGlobs = ugMini shonaClasses shonaCoreClasses
     evaluate $ force shonaGlobs
     putStrLn $ "Generated " ++ show (length shonaGlobs) ++ " globs, computing DFAs."
     let shonaCandidates = fmap (force . (id *** matchCounter)) shonaGlobs `using` (parListChunk 1000 rdeepseq)
     evaluate $ force shonaCandidates
     putStrLn $ "Computed UG."
-    grammar <- generateGrammarIO 3000 [0.01, 0.1, 0.2, 0.3] shonaCandidates shonaLex
-    putStrLn . unlines . fmap show $ grammar
+    (grammar, dfa, weights) <- generateGrammarIO 3000 [0.01, 0.1, 0.2, 0.3] shonaCandidates shonaLex
+    putStrLn "\n\n\n\n"
+    putStrLn $ prettyprintGrammar grammar weights
