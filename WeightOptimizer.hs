@@ -8,6 +8,8 @@ import qualified Data.Map as M
 import Data.Ix
 import Debug.Trace
 import qualified Data.Vector.Unboxed as V
+import System.IO
+import System.IO.Unsafe
 import Numeric
 
 -- using conjugate gradient method ad described by Shewchuk in
@@ -18,6 +20,11 @@ import Numeric
 rfInitSigma :: Double
 rfInitSigma = 0.05
 
+traceInline :: String -> a -> a
+traceInline s x = unsafePerformIO $ do
+    hPutStr stderr s
+    hFlush stderr
+    return x
 
 -- line search minimization using Illinois False Position method
 -- algorithm adapted from description at
@@ -58,11 +65,10 @@ conjugateGradientSearch (e1, e2) conproj fstar f' start = cjs dims (start ⊕ ve
                                              else cjs nbal' x sdir grad newx'
             where
                 (v,grad) = fstar x
-                beta' = innerProd grad (oldgrad ⊖ grad) / innerProd oldgrad oldgrad --Polak-Ribière
+                beta' = innerProd grad (grad ⊖ oldgrad) / innerProd oldgrad oldgrad --Polak-Ribière
                 (beta, nbal) = if (bal >= dims || beta' <= 0) then (0,0) else (beta', bal + 1)
                 sdir = (beta ⊙ olddir) ⊖ grad
-                newxt = regulaFalsiSearch e2 f' x sdir
-                newx = trace (showFFloat (Just 3) beta' " " ++ show bal ++ " " ++ showFVec (Just 3) (newxt ⊖ x)) newxt
+                newx = traceInline (if beta <= 0 then "+" else "-") $ regulaFalsiSearch e2 f' x sdir
                 (newx', iscorr) = conproj newx
                 nbal' = if iscorr then dims else nbal
 

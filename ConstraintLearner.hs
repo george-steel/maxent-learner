@@ -42,8 +42,8 @@ generateGrammarIO samplesize thresholds candidates wfs = do
     let mark500 = do
         c <- readIORef hashctr
         when (c `mod` 500 == 0) $ do
-            putStr "#"
-            hFlush stdout
+            hPutStr stderr "#"
+            hFlush stderr
         modifyIORef' hashctr (+1)
 
     currentGrammar :: IORef ([clabel], MaxentViolationCounter sigma, Vec) <- newIORef ([],blankdfa,zero)
@@ -70,14 +70,16 @@ generateGrammarIO samplesize thresholds candidates wfs = do
                     score = upperConfidenceOE o e
 
                 when (score < accuracy && cl `notElem` grammar) $ do
-                    putStrLn $ "\nSelected Constraint " ++ show cl ++  " (score " ++ showFFloat (Just 4) score [] ++ ", o=" ++ showFFloat (Just 1) o [] ++ ", e=" ++ showFFloat (Just 1) e [] ++ ")."
+                    hPutStrLn stderr ""
+                    putStrLn $ "\nSelected Constraint " ++ show cl ++  " (score=" ++ showFFloat (Just 4) score [] ++ ", o=" ++ showFFloat (Just 1) o [] ++ ", e=" ++ showFFloat (Just 1) e [] ++ ")."
                     let newgrammar = cl:grammar
                         newdfa = dfaProduct consMC (unpackShortDFST cdfa) dfa
-                    putStrLn $ "New grammar has " ++ (show . rangeSize . stateBounds $ newdfa) ++ " states."
+                    putStrLn $ "New grammar has " ++ show (length grammar) ++ " constraints and " ++ (show . rangeSize . stateBounds $ newdfa) ++ " states."
                     let oldweights = consVec 0 weights
                     newweights <- evaluate . force $ llpOptimizeWeights wfs newdfa oldweights
+                    hPutStrLn stderr ""
                     putStrLn $ "Recalculated weights: " ++ showFVec (Just 2) newweights
-                    atomicWriteIORef currentGrammar . force $! (newgrammar, newdfa, newweights)
+                    atomicWriteIORef currentGrammar . force $ (newgrammar, newdfa, newweights)
                     writeIORef currentSalad =<< genSalad
         putStrLn "\n\n\nAll Pases Complete."
 
