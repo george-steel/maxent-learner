@@ -128,7 +128,7 @@ instance RingModule Int Double where
 
 -- polynomial-like vector space
 -- behaves like union of R < R² < R³ < …
-newtype Vec = Vec (V.Vector Double) deriving (Eq, Read, Show, NFData)
+newtype Vec = Vec {unVec :: V.Vector Double} deriving (Eq, Read, Show, NFData)
 
 coords :: Vec -> [Double]
 coords (Vec xs) = V.toList xs

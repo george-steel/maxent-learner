@@ -13,7 +13,7 @@ import Control.DeepSeq
 
 -- monoid for counting multiple quantities.
 -- Union of the lattices Z < Z^2 < Z^3 < ...
-newtype Multicount = MC (V.Vector Int) deriving (Eq, Show, NFData)
+newtype Multicount = MC {unMC :: V.Vector Int} deriving (Eq, Show, NFData)
 
 getMC :: Multicount -> [Int]
 getMC (MC xs) = V.toList xs

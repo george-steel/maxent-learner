@@ -100,7 +100,7 @@ ugMini cls rcls = join [ ugSingleClasses cls
                        , ugBigrams cls]
 
 prettyprintGrammar :: (Show clabel) => [clabel] -> Vec -> String
-prettyprintGrammar grammar weights = unlines [showFFloat (Just 2) w "  " ++ show c | c <- grammar | w <- coords weights]
+prettyprintGrammar grammar weights = (unlines . reverse) [showFFloat (Just 2) w "  " ++ show c | c <- grammar | w <- coords weights]
 
 main = do
     evaluate $ force shonaClasses

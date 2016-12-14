@@ -1,5 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, GeneralizedNewtypeDeriving, FlexibleInstances, BangPatterns, FlexibleContexts, ForeignFunctionInterface #-}
-{-# INCLUDE "shortdfa.h "#-}
+{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, GeneralizedNewtypeDeriving, FlexibleInstances, BangPatterns, FlexibleContexts, ForeignFunctionInterface, MultiParamTypeClasses, FunctionalDependencies #-}
 
 module WeightedDFA where
 
@@ -12,6 +11,8 @@ import Data.Array.MArray
 import Data.Array.ST
 import Data.Array.Unboxed
 import qualified Data.Vector.Storable as SV
+import qualified Data.Vector.Storable.Mutable as SVM
+import qualified Data.Vector.Unboxed as V
 import Foreign (Ptr)
 import System.IO.Unsafe
 import Data.List
@@ -20,6 +21,7 @@ import Data.Monoid
 import Data.Int
 import Control.Arrow ((***), (&&&))
 import Ring
+import Probability
 
 -- initialize an array by caching a function
 fnArray :: (Ix i, IArray a e) => (i,i) -> (i -> e) -> a i e
@@ -69,6 +71,37 @@ instance (Ix q, Ix sigma) => Functor (DFST q sigma) where
     fmap f (DFST q0 tm fw) = DFST q0 (fmap (fmap f) tm) (fmap f fw)
 
 
+
+
+
+data PackedText sigma = PackedText !(sigma,sigma) !(SV.Vector Int16) !(SV.Vector Int32)
+
+packSingleText :: Ix sigma => (sigma,sigma) -> [sigma] -> PackedText sigma
+packSingleText cbound t = PackedText cbound (SV.fromList $ fmap pchar t ++ [-1,-2]) (SV.singleton 1)
+    where pchar = fromIntegral . index cbound
+
+packMultiText :: Ix sigma => (sigma,sigma) -> [([sigma],Int)] -> PackedText sigma
+packMultiText cbound ts = PackedText cbound (SV.fromList $ foldr constext [-2] ts) (SV.fromList $ fmap (fromIntegral . snd) ts)
+    where constext (t,_) lts  = fmap (fromIntegral . index cbound) t ++ [-1] ++ lts
+
+-- tyopeclass for specialized versions DFAs
+class PackedDFA pd k | pd -> k where
+    numStates :: (Ix sigma) => pd sigma -> Int
+    psegBounds :: (Ix sigma) => pd sigma -> (sigma, sigma)
+    unpackDFA :: (Ix sigma) => pd sigma -> DFST Int sigma k
+    packDFA :: forall sigma . (Ix sigma)
+            => Int16 -- number of states
+            -> Int16 -- initial state
+            -> (sigma, sigma) -- sigma bounds
+            -> ((Int16,sigma) -> Int16) -- transition state
+            -> ((Int16,sigma) -> k) -- transition weight
+            -> (Int16 -> k) --final weight
+            -> pd sigma
+
+
+
+
+
 -- remove unreachable states and renumber as integers (starting from 1) using a mark-sweep algorithm
 pruneUnreachable :: forall q sigma k . (Ix q, Ix sigma) => DFST q sigma k -> DFST Int sigma k
 pruneUnreachable dfa = DFST (newlabels ! initialState dfa) newTM newFW
@@ -96,6 +129,33 @@ pruneUnreachable dfa = DFST (newlabels ! initialState dfa) newTM newFW
         newTM = fnArray tmbound newTF
         newFW = fnArray nbound ((finalWeights dfa !) . (oldlabels !))
 
+
+pruneAndPack :: forall q sigma pd k. (Ix q, Ix sigma, PackedDFA pd k) => DFST q sigma k -> pd sigma
+pruneAndPack dfa = packDFA (fromIntegral ns) (newlabels ! initialState dfa) cbound newTF newTW newFW
+    where
+        qbound = stateBounds dfa
+        cbound = segBounds dfa
+        reachable = runSTUArray $ do
+            reached :: STUArray s q Bool <- newArray qbound False
+            let dfs :: q -> ST s ()
+                dfs n = do
+                    writeArray reached n True
+                    forM_ (range cbound) $ \c -> do
+                        let n' = advanceState dfa n c
+                        seen <- readArray reached n'
+                        when (not seen) (dfs n')
+                    return ()
+            dfs (initialState dfa)
+            return reached
+        keepstates :: [q] = filter (reachable!) (range qbound)
+        ns = (length keepstates)
+        nbound = (0, fromIntegral (ns - 1))
+        oldlabels :: Array Int16 q = listArray nbound keepstates
+        newlabels :: Array q Int16 = array qbound (zip keepstates (range nbound))
+        tmbound = nbound `xbd` cbound
+        newTF (s,c) = let (t,w) = transition dfa (oldlabels!s) c in newlabels!t
+        newTW (s,c) = let (t,w) = transition dfa (oldlabels!s) c in w
+        newFW = (finalWeights dfa !) . (oldlabels !) . fromIntegral
 
 
 -- raw product construction
@@ -167,82 +227,301 @@ data ShortDFST sigma = ShortDFST {-# UNPACK #-} !Int16 -- number of states
                                  !(SV.Vector Int16) -- final weights
                                  deriving (Show)
 
-shortSegBounds (ShortDFST ns q0 sb tf tw fw) = sb
 
 instance NFData sigma => NFData (ShortDFST sigma) where
     rnf (ShortDFST ns q0 sb tf tw fw) = ns `seq` q0 `seq` rnf sb `seq` tf `seq` tw `seq` fw `seq` ()
 
-data PackedText sigma = PackedText !(sigma,sigma) !(SV.Vector Int16) !(SV.Vector Int32)
+foreign import ccall unsafe "transducePackedShort"
+    c_transducePackedShort :: Int16 -> Int16
+        -> Ptr Int16 -> Ptr Int16 -> Ptr Int16
+        -> Ptr Int16 -> Ptr Int32
+        -> IO (Int64)
 
-packSingleText :: Ix sigma => (sigma,sigma) -> [sigma] -> PackedText sigma
-packSingleText cbound t = PackedText cbound (SV.fromList $ fmap pchar t ++ [-1,-2]) (SV.singleton 1)
-    where pchar = fromIntegral . index cbound
+boxArray :: Ix i => (i,i) -> [(i,e)] -> Array i e
+boxArray = array
 
-packMultiText :: Ix sigma => (sigma,sigma) -> [([sigma],Int)] -> PackedText sigma
-packMultiText cbound ts = PackedText cbound (SV.fromList $ foldr constext [-2] ts) (SV.fromList $ fmap (fromIntegral . snd) ts)
-    where constext (t,_) lts  = fmap (fromIntegral . index cbound) t ++ [-1] ++ lts
+instance PackedDFA ShortDFST (Sum Int) where
+    numStates (ShortDFST ns _ _ _ _ _) = fromIntegral ns
+    psegBounds (ShortDFST _ _ sb _ _ _) = sb
 
+    packDFA ns' q0 cbound tf tw fw = ShortDFST ns' q0 cbound tfm twm fwm where
+        ns = fromIntegral ns'
+        nc = rangeSize cbound
+        unIxc = boxArray (0,rangeSize cbound - 1) (fmap (index cbound &&& id) (range cbound))
+        oldix i = let (qt,r) = i `quotRem` ns in (fromIntegral r, unIxc ! qt)
+        nbound = (0, fromIntegral (ns - 1))
+        tfm = SV.generate (ns*nc) (tf . oldix)
+        twm = SV.generate (ns*nc) (fromIntegral . getSum . tw . oldix)
+        fwm = SV.generate ns (fromIntegral . getSum . fw . fromIntegral)
 
-foreign import ccall unsafe "transducePacked" c_transducePacked :: Int16 -> Int16
-                                                                    -> Ptr Int16 -> Ptr Int16 -> Ptr Int16
-                                                                    -> Ptr Int16 -> Ptr Int32
-                                                                    -> IO (Int64)
+    unpackDFA (ShortDFST ns q0 cbound tm twm fwm) = DFST (fromIntegral q0) tm' fwm' where
+        qbound :: (Int, Int)
+        qbound = (0, fromIntegral ns - 1)
+        tbound = qbound `xbd` cbound
+        --idx :: (Int,sigma) -> Int
+        idx (s,c) = s + fromIntegral ns * index cbound c
+        tf :: Int -> (Int, Sum Int)
+        tf = (fromIntegral . (tm SV.!)) &&& (fromIntegral . (twm SV.!))
+        tm' = fnArray tbound (tf . idx)
+        fwm' = fnArray qbound (fromIntegral . (fwm SV.!))
 
-transducePacked :: (Ix sigma) => ShortDFST sigma -> PackedText sigma -> Int
-transducePacked (ShortDFST ns q0 cb tf tw fw) (PackedText cb' tvec fvec)
+transducePackedShort :: (Ix sigma) => ShortDFST sigma -> PackedText sigma -> Int
+transducePackedShort (ShortDFST ns q0 cb tf tw fw) (PackedText cb' tvec fvec)
     | cb == cb' = fromIntegral . unsafePerformIO $
         SV.unsafeWith tf $ \ptf -> SV.unsafeWith tw $ \ptw -> SV.unsafeWith fw $ \pfw ->
             SV.unsafeWith tvec $ \ptvec -> SV.unsafeWith fvec $ \pfvec ->
-                c_transducePacked ns q0 ptf ptw pfw ptvec pfvec
+                c_transducePackedShort ns q0 ptf ptw pfw ptvec pfvec
     | otherwise = error "Mismatched chatacter bounds in packed text vs DFA"
 
-transduceZ :: Ix sigma => ShortDFST sigma -> [sigma] -> Int
-transduceZ dfa t = transducePacked dfa (packSingleText (shortSegBounds dfa) t)
 
-unpackShortDFST :: forall sigma . (Ix sigma) => ShortDFST sigma -> DFST Int sigma (Sum Int)
-unpackShortDFST (ShortDFST ns q0 cbound tm twm fwm) = DFST (fromIntegral q0) tm' fwm' where
-    qbound :: (Int, Int)
-    qbound = (0, fromIntegral ns - 1)
-    tbound = qbound `xbd` cbound
-    idx :: (Int,sigma) -> Int
-    idx (s,c) = s + fromIntegral ns * index cbound c
-    tf :: Int -> (Int, Sum Int)
-    tf = (fromIntegral . (tm SV.!)) &&& (fromIntegral . (twm SV.!))
-    tm' = fnArray tbound (tf . idx)
-    fwm' = fnArray qbound (fromIntegral . (fwm SV.!) . fromIntegral)
 
-pruneAndPack :: forall q sigma . (Ix q, Ix sigma) => DFST q sigma (Sum Int) -> ShortDFST sigma
-pruneAndPack dfa = ShortDFST (fromIntegral ns) (newlabels ! initialState dfa) cbound newTM newTWM newFW
-    where
-        qbound = stateBounds dfa
-        cbound = segBounds dfa
-        reachable = runSTUArray $ do
-            reached :: STUArray s q Bool <- newArray qbound False
-            let dfs :: q -> ST s ()
-                dfs n = do
-                    writeArray reached n True
-                    forM_ (range cbound) $ \c -> do
-                        let n' = advanceState dfa n c
-                        seen <- readArray reached n'
-                        when (not seen) (dfs n')
-                    return ()
-            dfs (initialState dfa)
-            return reached
-        keepstates :: [q] = filter (reachable!) (range qbound)
-        ns = (length keepstates)
+
+
+
+
+data MulticountDFST sigma = MulticountDFST {-# UNPACK #-} !Int16 -- number of states
+                                           {-# UNPACK #-} !Int16 -- initial state
+                                           {-# UNPACK #-} !(sigma, sigma) -- segment bounds
+                                           {-# UNPACK #-} !Int16 -- vector dimensions
+                                           !(SV.Vector Int16) -- state transitions
+                                           !(SV.Vector Int16) -- weight transitions
+                                           !(SV.Vector Int16) -- final weights
+                                           deriving (Show)
+
+instance NFData sigma => NFData (MulticountDFST sigma) where
+    rnf (MulticountDFST ns q0 sb dims tf tw fw) = ns `seq` q0 `seq` rnf sb `seq` dims `seq` tf `seq` tw `seq` fw `seq` ()
+
+instance PackedDFA MulticountDFST (Multicount) where
+    numStates (MulticountDFST ns _ _ _ _ _ _) = fromIntegral ns
+    psegBounds (MulticountDFST _ _ sb _ _ _ _) = sb
+
+    packDFA ns' q0 cbound tf tw fw = MulticountDFST ns' q0 cbound (fromIntegral dims) tfm twm fwm where
+        ns = fromIntegral ns'
         nc = rangeSize cbound
-        nbound = (0, fromIntegral (ns - 1))
-        oldlabels :: Array Int16 q = listArray nbound keepstates
-        newlabels :: Array q Int16 = array qbound (zip keepstates (range nbound))
-        tmbound = nbound `xbd` cbound
-        newTF (s,c) = let (t,w) = transition dfa (oldlabels!s) c in newlabels!t
-        newTWF (s,c) = let (t,w) = transition dfa (oldlabels!s) c in fromIntegral (getSum w)
-        unIxc :: Array Int sigma
-        unIxc = array (0,rangeSize cbound - 1) (fmap (index cbound &&& id) (range cbound))
+        dims::Int = let (MC x) = tw (0,fst cbound) in fromIntegral (V.length x)
+        unIxc = boxArray (0,rangeSize cbound - 1) (fmap (index cbound &&& id) (range cbound))
         oldix i = let (qt,r) = i `quotRem` ns in (fromIntegral r, unIxc ! qt)
-        newTM = SV.generate (ns*nc) (newTF . oldix)
-        newTWM = SV.generate (ns*nc) (newTWF . oldix)
-        newFW = SV.generate ns (fromIntegral . getSum . (finalWeights dfa !) . (oldlabels !) . fromIntegral)
+        tfm = SV.generate (ns*nc) (tf . oldix)
+        twm = SV.generate (ns*nc*dims) (\i -> let (i',j) = i `quotRem` dims in fromIntegral (unMC (tw (oldix i')) V.! j))
+        fwm = SV.generate (ns*dims) (\i -> let (i',j) = i `quotRem` dims in fromIntegral (unMC (fw (fromIntegral i')) V.! j))
+
+    unpackDFA (MulticountDFST ns q0 cbound dims' tm twm fwm) = DFST (fromIntegral q0) tm' fwm' where
+        dims = fromIntegral dims'
+        qbound :: (Int, Int)
+        qbound = (0, fromIntegral ns - 1)
+        tbound = qbound `xbd` cbound
+        --idx :: (Int,sigma) -> Int
+        idx (s,c) = s + fromIntegral ns * index cbound c
+        tf :: Int -> (Int, Multicount)
+        tf i = (fromIntegral (tm SV.! i), MC ((V.map fromIntegral . SV.convert) (SV.slice (i*dims) dims twm)))
+        tm' = fnArray tbound (tf . idx)
+        fwm' = fnArray qbound (\i -> MC ((V.map fromIntegral . SV.convert) (SV.slice (i*dims) dims fwm)))
+
+foreign import ccall unsafe "transducePackedMulti"
+    c_transducePackedMulti :: Int16 -> Int16 -> Int16
+        -> Ptr Int16 -> Ptr Int16 -> Ptr Int16
+        -> Ptr Int16 -> Ptr Int32
+        -> Ptr Int64 -> IO ()
+
+transducePackedMulti :: (Ix sigma) => MulticountDFST sigma -> PackedText sigma -> Multicount
+transducePackedMulti (MulticountDFST ns q0 cb dims tf tw fw) (PackedText cb' tvec fvec)
+    | cb == cb' = MC . V.map fromIntegral . SV.convert . unsafePerformIO $
+        SV.unsafeWith tf $ \ptf -> SV.unsafeWith tw $ \ptw -> SV.unsafeWith fw $ \pfw ->
+            SV.unsafeWith tvec $ \ptvec -> SV.unsafeWith fvec $ \pfvec -> do
+                outv :: SVM.IOVector Int64 <- SVM.new (fromIntegral dims)
+                SVM.unsafeWith outv (c_transducePackedMulti ns q0 dims ptf ptw pfw ptvec pfvec)
+                SV.freeze outv
+    | otherwise = error "Mismatched chatacter bounds in packed text vs DFA"
+
+
+
+data ExpVecDFST sigma = ExpVecDFST {-# UNPACK #-} !Int16 -- number of states
+                                   {-# UNPACK #-} !Int16 -- initial state
+                                   {-# UNPACK #-} !(sigma, sigma) -- segment bounds
+                                   {-# UNPACK #-} !Int16 -- vector dimensions
+                                   !(SV.Vector Int16) -- state transitions
+                                   !(SV.Vector Double) -- transition probabilities
+                                   !(SV.Vector Double) -- transition vectors
+                                   !(SV.Vector Double) -- final probabilities
+                                   !(SV.Vector Double) -- final vectors
+                                   deriving (Show)
+
+instance PackedDFA ExpVecDFST (Expectation Vec) where
+    numStates (ExpVecDFST ns _ _ _ _ _ _ _ _ ) = fromIntegral ns
+    psegBounds (ExpVecDFST _ _ sb _ _ _ _ _ _ ) = sb
+
+    packDFA ns' q0 cbound tf tw fw = ExpVecDFST ns' q0 cbound (fromIntegral dims) tm tpm tvm fpm fvm where
+        ns = fromIntegral ns'
+        nc = rangeSize cbound
+        dims::Int = let (Exp _ (Vec x)) = tw (0,fst cbound) in fromIntegral (V.length x)
+        unIxc = boxArray (0,rangeSize cbound - 1) (fmap (index cbound &&& id) (range cbound))
+        oldix i = let (qt,r) = i `quotRem` ns in (fromIntegral r, unIxc ! qt)
+        tm = SV.generate (ns*nc) (tf . oldix)
+        tpm = SV.generate (ns*nc) (prob . tw . oldix)
+        tvm = SV.generate (ns*nc*dims) (\i -> let (i',j) = i `quotRem` dims in (unVec . exps . tw . oldix $ i') V.! j)
+        fpm = SV.generate ns (prob . fw . fromIntegral)
+        fvm = SV.generate (ns*dims) (\i -> let (i',j) = i `quotRem` dims in (unVec . exps . fw . fromIntegral $ i') V.! j)
+
+    unpackDFA (ExpVecDFST ns q0 cbound dims' tm tpm tvm fpm fvm) = DFST (fromIntegral q0) tm' fwm' where
+        dims = fromIntegral dims'
+        qbound :: (Int, Int)
+        qbound = (0, fromIntegral ns - 1)
+        tbound = qbound `xbd` cbound
+        --idx :: (Int,sigma) -> Int
+        idx (s,c) = s + fromIntegral ns * index cbound c
+        tf i = (fromIntegral (tm SV.! i), Exp (tpm SV.! i) (Vec (SV.convert (SV.slice (i*dims) dims tvm))))
+        tm' = fnArray tbound (tf . idx)
+        fw i = Exp (fpm SV.! i) (Vec (SV.convert (SV.slice (i*dims) dims fvm)))
+        fwm' = fnArray qbound fw
+
+--void weightExpVec(const int16_t ns, const int16_t nc, const int16_t dims,
+--                  const int16_t* restrict tcounts, const int16_t* restrict fcounts,
+--                  const double* restrict weights,
+--                  double* restrict tprob, double* restrict tvec, double* restrict fprob, double* restrict fvec){
+
+foreign import ccall unsafe "weightExpVec"
+    c_weightExpVec :: Int16 -> Int16 -> Int16
+        -> Ptr Int16 -> Ptr Int16
+        -> Ptr Double
+        -> Ptr Double -> Ptr Double -> Ptr Double -> Ptr Double -> IO ()
+
+weightExpVec :: (Ix sigma) => MulticountDFST sigma -> Vec -> ExpVecDFST sigma
+weightExpVec (MulticountDFST ns q0 cbound dims tm tc fc) (Vec weights)
+    | dims' == V.length weights = (ExpVecDFST ns q0 cbound dims tm tpm tvm fpm fvm)
+    where
+        w' = SV.convert weights
+        ns' = fromIntegral ns
+        nc = rangeSize cbound
+        dims' = fromIntegral dims
+        (tpm,tvm,fpm,fvm) = unsafePerformIO $ do
+            tpm' <- SVM.new (ns'*nc)
+            tvm' <- SVM.new (ns'*nc*dims')
+            fpm' <- SVM.new (ns')
+            fvm' <- SVM.new (ns'*dims')
+            SV.unsafeWith tc $ \ptc -> SV.unsafeWith fc $ \pfc -> SV.unsafeWith w' $ \pw ->
+                SVM.unsafeWith tpm' $ \ptp -> SVM.unsafeWith tvm' $ \ptv -> SVM.unsafeWith fpm' $ \pfp -> SVM.unsafeWith fvm' $ \pfv ->
+                    c_weightExpVec ns (fromIntegral nc) dims ptc pfc pw ptp ptv pfp pfv
+            (,,,) <$> SV.freeze tpm' <*> SV.freeze tvm' <*> SV.freeze fpm' <*> SV.freeze fvm'
+
+--void expsByLengthVec(const int16_t ns, const int16_t nc, const int16_t dims, const int16_t q0, const int16_t maxlen,
+--                     const int16_t* restrict tmat, const double* restrict tprob, const double* restrict tvec, const double* restrict fprob, const double* restrict fvec,
+--                     double* outp, double* outv) {
+foreign import ccall unsafe "expsByLengthVec"
+    c_expsByLengthVec :: Int16 -> Int16 -> Int16 -> Int16 -> Int16
+        -> Ptr Int16 -> Ptr Double -> Ptr Double -> Ptr Double -> Ptr Double
+        -> Ptr Double -> Ptr Double -> IO ()
+
+expsByLengthVec :: (Ix sigma) => ExpVecDFST sigma -> Int -> Array Int (Expectation Vec)
+expsByLengthVec (ExpVecDFST ns q0 cbound dims tm tpm tvm fpm fvm) maxlen = unsafePerformIO $ do
+    let nc = rangeSize cbound
+        dims' = fromIntegral dims
+        ns' = fromIntegral ns
+    lpm <- SVM.new (ns'*(maxlen+1))
+    lvm <- SVM.new (dims'*ns'*(maxlen+1))
+    SV.unsafeWith tm $ \ptm -> SV.unsafeWith tpm $ \ptp -> SV.unsafeWith tvm $ \ptv -> SV.unsafeWith fpm $ \pfp -> SV.unsafeWith fvm $ \pfv ->
+        SVM.unsafeWith lpm $ \plp -> SVM.unsafeWith lvm $ \plv ->
+            c_expsByLengthVec ns (fromIntegral nc) dims q0 (fromIntegral maxlen) ptm ptp ptv pfp pfv plp plv
+    fmap (listArray (0,maxlen)) . forM (range (0,maxlen)) $ \n -> do
+        p <- SVM.read lpm n
+        v <- SV.freeze (SVM.slice (n*dims') dims' lvm)
+        return $ Exp p (Vec (SV.convert v))
+
+
+data ExpDoubleDFST sigma = ExpDoubleDFST {-# UNPACK #-} !Int16 -- number of states
+                                         {-# UNPACK #-} !Int16 -- initial state
+                                         {-# UNPACK #-} !(sigma, sigma) -- segment bounds
+                                         !(SV.Vector Int16) -- state transitions
+                                         !(SV.Vector Double) -- transition probabilities
+                                         !(SV.Vector Double) -- transition vectors
+                                         !(SV.Vector Double) -- final probabilities
+                                         !(SV.Vector Double) -- final vectors
+                                         deriving (Show)
+
+instance PackedDFA ExpDoubleDFST (Expectation Double) where
+    numStates (ExpDoubleDFST ns _ _ _ _ _ _ _ ) = fromIntegral ns
+    psegBounds (ExpDoubleDFST _ _ sb _ _ _ _ _ ) = sb
+
+    packDFA ns' q0 cbound tf tw fw = ExpDoubleDFST ns' q0 cbound tm tpm tvm fpm fvm where
+        ns = fromIntegral ns'
+        nc = rangeSize cbound
+        unIxc = boxArray (0,rangeSize cbound - 1) (fmap (index cbound &&& id) (range cbound))
+        oldix i = let (qt,r) = i `quotRem` ns in (fromIntegral r, unIxc ! qt)
+        tm = SV.generate (ns*nc) (tf . oldix)
+        tpm = SV.generate (ns*nc) (prob . tw . oldix)
+        tvm = SV.generate (ns*nc) (exps . tw . oldix)
+        fpm = SV.generate ns (prob . fw . fromIntegral)
+        fvm = SV.generate ns (exps . fw . fromIntegral)
+
+    unpackDFA (ExpDoubleDFST ns q0 cbound tm tpm tvm fpm fvm) = DFST (fromIntegral q0) tm' fwm' where
+        qbound :: (Int, Int)
+        qbound = (0, fromIntegral ns - 1)
+        tbound = qbound `xbd` cbound
+        --idx :: (Int,sigma) -> Int
+        idx (s,c) = s + fromIntegral ns * index cbound c
+        tf i = (fromIntegral (tm SV.! i), Exp (tpm SV.! i) (tvm SV.! i))
+        tm' = fnArray tbound (tf . idx)
+        fw i = Exp (fpm SV.! i) (fvm SV.! i)
+        fwm' = fnArray qbound fw
+
+--void weightExpVec(const int16_t ns, const int16_t nc, const int16_t dims,
+--                  const int16_t* restrict tcounts, const int16_t* restrict fcounts,
+--                  const double* restrict weights,
+--                  double* restrict tprob, double* restrict tvec, double* restrict fprob, double* restrict fvec){
+
+foreign import ccall unsafe "weightExpPartial"
+    c_weightExpPartial :: Int16 -> Int16 -> Int16
+        -> Ptr Int16 -> Ptr Int16
+        -> Ptr Double -> Ptr Double
+        -> Ptr Double -> Ptr Double -> Ptr Double -> Ptr Double -> IO ()
+
+weightExpPartial :: (Ix sigma) => MulticountDFST sigma -> Vec -> Vec -> ExpDoubleDFST sigma
+weightExpPartial (MulticountDFST ns q0 cbound dims tm tc fc) (Vec weights) (Vec dir)
+    | dims' == V.length weights && dims' == V.length dir = (ExpDoubleDFST ns q0 cbound tm tpm tvm fpm fvm)
+    where
+        w' = SV.convert weights
+        dir' = SV.convert dir
+        ns' = fromIntegral ns
+        nc = rangeSize cbound
+        dims' = fromIntegral dims
+        (tpm,tvm,fpm,fvm) = unsafePerformIO $ do
+            tpm' <- SVM.new (ns'*nc)
+            tvm' <- SVM.new (ns'*nc)
+            fpm' <- SVM.new (ns')
+            fvm' <- SVM.new (ns')
+            SV.unsafeWith tc $ \ptc -> SV.unsafeWith fc $ \pfc -> SV.unsafeWith w' $ \pw -> SV.unsafeWith dir' $ \pdir ->
+                SVM.unsafeWith tpm' $ \ptpm -> SVM.unsafeWith tvm' $ \ptvm -> SVM.unsafeWith fpm' $ \pfpm -> SVM.unsafeWith fvm' $ \pfvm ->
+                    c_weightExpPartial ns (fromIntegral nc) dims ptc pfc pw pdir ptpm ptvm pfpm pfvm
+            (,,,) <$> SV.freeze tpm' <*> SV.freeze tvm' <*> SV.freeze fpm' <*> SV.freeze fvm'
+
+
+
+
+--vvoid expsByLengthDouble(const int16_t ns, const int16_t nc, const int16_t dims, const int16_t q0, const int16_t maxlen,
+--                        const int16_t* restrict tmat, const double* restrict tprob, const double* restrict tvec, const double* restrict fprob, const double* restrict fvec,
+--                        double* outp, double* outv) {
+foreign import ccall unsafe "expsByLengthDouble"
+    c_expsByLengthDouble :: Int16 -> Int16 -> Int16 -> Int16
+        -> Ptr Int16 -> Ptr Double -> Ptr Double -> Ptr Double -> Ptr Double
+        -> Ptr Double -> Ptr Double -> IO ()
+
+expsByLengthDouble :: (Ix sigma) => ExpDoubleDFST sigma -> Int -> Array Int (Expectation Double)
+expsByLengthDouble (ExpDoubleDFST ns q0 cbound tm tpm tvm fpm fvm) maxlen = unsafePerformIO $ do
+    let nc = rangeSize cbound
+        ns' = fromIntegral ns
+    lpm <- SVM.new (ns'*(maxlen+1))
+    lvm <- SVM.new (ns'*(maxlen+1))
+    SV.unsafeWith tm $ \ptm -> SV.unsafeWith tpm $ \ptp -> SV.unsafeWith tvm $ \ptv -> SV.unsafeWith fpm $ \pfp -> SV.unsafeWith fvm $ \pfv ->
+        SVM.unsafeWith lpm $ \plp -> SVM.unsafeWith lvm $ \plv ->
+            c_expsByLengthDouble ns (fromIntegral nc) q0 (fromIntegral maxlen) ptm ptp ptv pfp pfv plp plv
+    fmap (listArray (0,maxlen)) . forM (range (0,maxlen)) $ \n -> do
+        p <- SVM.read lpm n
+        v <- SVM.read lvm n
+        return (Exp p v)
+
+
+
+--------------------------------------------------------------------------------
+
 
 -- quantifiers for globs
 data GlobReps = GSingle | GPlus | GStar deriving (Enum, Eq, Ord, Read, Show)

@@ -31,9 +31,9 @@ generateGrammarIO :: forall g clabel sigma . (Show clabel, Ix sigma, NFData sigm
     -> [Double] -- list of accuracy thresholds
     -> [(clabel, ShortDFST sigma)] -- list of constraints to try in order. Each constraint has a label and a dfa to compute it
     -> Lexicon sigma -- List of words to try and their frequencies
-    -> IO ([clabel], MaxentViolationCounter sigma, Vec) -- computed grammar
+    -> IO ([clabel], MulticountDFST sigma, Vec) -- computed grammar
 generateGrammarIO samplesize thresholds candidates wfs = do
-    let cbound = shortSegBounds . snd . head $ candidates
+    let cbound = psegBounds . snd . head $ candidates
         blankdfa = nildfa cbound
         lendist = lengthCdf wfs
         pwfs = packMultiText cbound (wordFreqs wfs)
@@ -46,12 +46,12 @@ generateGrammarIO samplesize thresholds candidates wfs = do
             hFlush stderr
         modifyIORef' hashctr (+1)
 
-    currentGrammar :: IORef ([clabel], MaxentViolationCounter sigma, Vec) <- newIORef ([],blankdfa,zero)
+    currentGrammar :: IORef ([clabel], MulticountDFST sigma, Vec) <- newIORef ([],pruneAndPack blankdfa ,zero)
 
     let genSalad :: IO (PackedText sigma)
         genSalad = do
             (_,dfa,weights) <- readIORef currentGrammar
-            salad' <- getStdRandom . runState $ sampleWordSalad (dropCounts (weightConstraints dfa weights)) lendist samplesize
+            salad' <- getStdRandom . runState $ sampleWordSalad (dropCounts . unpackDFA $ weightExpVec dfa weights) lendist samplesize
             return . packMultiText cbound . wordFreqs . sortLexicon . fmap (\x -> (x,1)) $ salad'
 
     currentSalad <- newIORef undefined
@@ -64,8 +64,8 @@ generateGrammarIO samplesize thresholds candidates wfs = do
                 mark500
                 (grammar, dfa, weights) <- readIORef currentGrammar
                 salad <- readIORef currentSalad
-                let o = fromIntegral $ transducePacked cdfa pwfs
-                    o' = fromIntegral $ transducePacked cdfa salad
+                let o = fromIntegral $ transducePackedShort cdfa pwfs
+                    o' = fromIntegral $ transducePackedShort cdfa salad
                     e = o' * fromIntegral (totalWords wfs) / fromIntegral samplesize
                     score = upperConfidenceOE o e
 
@@ -73,10 +73,10 @@ generateGrammarIO samplesize thresholds candidates wfs = do
                     hPutStrLn stderr ""
                     putStrLn $ "\nSelected Constraint " ++ show cl ++  " (score=" ++ showFFloat (Just 4) score [] ++ ", o=" ++ showFFloat (Just 1) o [] ++ ", e=" ++ showFFloat (Just 1) e [] ++ ")."
                     let newgrammar = cl:grammar
-                        newdfa = dfaProduct consMC (unpackShortDFST cdfa) dfa
-                    putStrLn $ "New grammar has " ++ show (length grammar) ++ " constraints and " ++ (show . rangeSize . stateBounds $ newdfa) ++ " states."
+                        newdfa :: MulticountDFST sigma = pruneAndPack (rawIntersection consMC (unpackDFA cdfa) (unpackDFA dfa))
+                    putStrLn $ "New grammar has " ++ show (length newgrammar) ++ " constraints and " ++ show (numStates newdfa) ++ " states."
                     let oldweights = consVec 0 weights
-                    newweights <- evaluate . force $ llpOptimizeWeights wfs newdfa oldweights
+                    newweights <- evaluate . force $ llpOptimizeWeights (lengthFreqs wfs) pwfs newdfa oldweights
                     hPutStrLn stderr ""
                     putStrLn $ "Recalculated weights: " ++ showFVec (Just 2) newweights
                     atomicWriteIORef currentGrammar . force $ (newgrammar, newdfa, newweights)
