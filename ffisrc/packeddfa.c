@@ -3,6 +3,9 @@
 #include <string.h>
 #include <math.h>
 
+// Optimized functions to perfor calculations on packed DFAs for FFI use by the WeightedDFA module.
+// All functions read from and write into memory buffers allocted by Haskell using Data.Vector.Storable
+
 int64_t transducePackedShort(const int16_t ns, const int16_t q0,
                              const int16_t* restrict tmat, const int16_t* restrict tcounts, const int16_t* restrict fcounts,
                              const int16_t* restrict cstream, int32_t* restrict fstream) {

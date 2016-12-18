@@ -1,6 +1,34 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, GeneralizedNewtypeDeriving, FlexibleInstances, BangPatterns, FlexibleContexts, ForeignFunctionInterface, MultiParamTypeClasses, FunctionalDependencies #-}
 
-module WeightedDFA where
+{- Library for handling deterministic finite state transducers.
+
+Contents:
+- A polymorphic DFST implementation (a functor on the output type) capable of transducing into monoids and semirings (multiplicatively), and adding up all paths of semiring transducers. Input ranges are required to be Ix rectangles.
+- Functions to prune unreachable states and compute the product construction
+- Fast, compact implementations for common output types (Sum Int, Multicount, Expectation Vec, Expectation Double) which can be packed from or unpacked into the polymorphic type.
+- Optimized C functions for performing common operations on the specialized types:
+    - Packing strings into a compact format
+    - Transducing packed strings into integer counts and Multicounts
+    - Summing over all paths of expectation transducers
+    - Applying maxent weights to vector counts to get expectations
+- Glob type and function to generate transducers counting glob occurrences.
+-}
+
+module WeightedDFA (
+    DFST(..), fnArray, xbd,
+    stateBounds, segBounds, transition,
+    transduceM, transduceR, stepweights, initialWeightArray, reverseTM,
+    PackedDFA(..), pruneUnreachable, pruneAndPack,
+    rawIntersection, dfaProduct, nildfa,
+
+    PackedText, packSingleText, packMultiText,
+    ShortDFST, transducePackedShort,
+    MulticountDFST, transducePackedMulti,
+    ExpVecDFST, weightExpVec, expsByLengthVec,
+    ExpDoubleDFST, weightExpPartial, expsByLengthDouble,
+
+    GlobReps(..), SegSet, ListGlob(..), matchCounter
+)where
 
 import Control.DeepSeq
 import Control.Monad
@@ -19,7 +47,7 @@ import Data.List
 import Data.Bits
 import Data.Monoid
 import Data.Int
-import Control.Arrow ((***), (&&&))
+import Control.Arrow ((&&&))
 import Ring
 import Probability
 
@@ -73,7 +101,8 @@ instance (Ix q, Ix sigma) => Functor (DFST q sigma) where
 
 
 
-
+-- Structure holding text and word frequencies as a flat array of segment indices (in the input rectangle).
+-- This can be transduced very quickly using the specialized functions.
 data PackedText sigma = PackedText !(sigma,sigma) !(SV.Vector Int16) !(SV.Vector Int32)
 
 packSingleText :: Ix sigma => (sigma,sigma) -> [sigma] -> PackedText sigma
@@ -83,6 +112,8 @@ packSingleText cbound t = PackedText cbound (SV.fromList $ fmap pchar t ++ [-1,-
 packMultiText :: Ix sigma => (sigma,sigma) -> [([sigma],Int)] -> PackedText sigma
 packMultiText cbound ts = PackedText cbound (SV.fromList $ foldr constext [-2] ts) (SV.fromList $ fmap (fromIntegral . snd) ts)
     where constext (t,_) lts  = fmap (fromIntegral . index cbound) t ++ [-1] ++ lts
+
+
 
 -- tyopeclass for specialized versions DFAs
 class PackedDFA pd k | pd -> k where
@@ -129,7 +160,7 @@ pruneUnreachable dfa = DFST (newlabels ! initialState dfa) newTM newFW
         newTM = fnArray tmbound newTF
         newFW = fnArray nbound ((finalWeights dfa !) . (oldlabels !))
 
-
+-- prune unreachable states and pack into a specialized implementation
 pruneAndPack :: forall q sigma pd k. (Ix q, Ix sigma, PackedDFA pd k) => DFST q sigma k -> pd sigma
 pruneAndPack dfa = packDFA (fromIntegral ns) (newlabels ! initialState dfa) cbound newTF newTW newFW
     where
@@ -152,9 +183,8 @@ pruneAndPack dfa = packDFA (fromIntegral ns) (newlabels ! initialState dfa) cbou
         nbound = (0, fromIntegral (ns - 1))
         oldlabels :: Array Int16 q = listArray nbound keepstates
         newlabels :: Array q Int16 = array qbound (zip keepstates (range nbound))
-        tmbound = nbound `xbd` cbound
-        newTF (s,c) = let (t,w) = transition dfa (oldlabels!s) c in newlabels!t
-        newTW (s,c) = let (t,w) = transition dfa (oldlabels!s) c in w
+        newTF (s,c) = let (t,_) = transition dfa (oldlabels!s) c in newlabels!t
+        newTW (s,c) = let (_,w) = transition dfa (oldlabels!s) c in w
         newFW = (finalWeights dfa !) . (oldlabels !) . fromIntegral
 
 
@@ -249,7 +279,6 @@ instance PackedDFA ShortDFST (Sum Int) where
         nc = rangeSize cbound
         unIxc = boxArray (0,rangeSize cbound - 1) (fmap (index cbound &&& id) (range cbound))
         oldix i = let (qt,r) = i `quotRem` ns in (fromIntegral r, unIxc ! qt)
-        nbound = (0, fromIntegral (ns - 1))
         tfm = SV.generate (ns*nc) (tf . oldix)
         twm = SV.generate (ns*nc) (fromIntegral . getSum . tw . oldix)
         fwm = SV.generate ns (fromIntegral . getSum . fw . fromIntegral)

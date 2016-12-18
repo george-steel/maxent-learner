@@ -8,9 +8,6 @@ import PhonotacticGrammar
 import ConstraintLearner
 
 import Control.Monad
-import Control.Monad.State
-import Control.Monad.Trans.Class
-import System.Random
 import Data.List
 import Data.Monoid
 import Data.Maybe
@@ -24,6 +21,7 @@ import Numeric
 import Control.Parallel.Strategies
 import Data.FileEmbed
 
+{-}
 ftcsv :: String
 ftcsv = $(embedStringFile "./features-char.csv")
 
@@ -42,6 +40,7 @@ onsetLex = sortLexicon $ do
     (_:sn) <- return sn'
     Just n <- return $ readMaybe sn
     return (segsToRefs onsetft (words sw), n)
+-}
 
 shonaFT = fromJust (csvToFeatureTable id $(embedStringFile "./testcases/ShonaFeatures.csv"))
 shonaLex = sortLexicon $ do

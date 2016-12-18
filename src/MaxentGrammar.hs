@@ -13,9 +13,6 @@ import WeightedDFA
 import Probability
 import Data.Array.IArray
 import Data.Array.Unboxed
-import qualified Data.Array.Repa as R
-import Data.Array.Repa (Z(..), (:.)(..))
-import qualified Data.Array.Repa.Repr.Vector as R
 import Control.Monad
 import Control.Monad.State
 --import Control.Monad.Trans.Class

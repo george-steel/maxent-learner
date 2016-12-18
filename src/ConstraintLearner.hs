@@ -40,11 +40,11 @@ generateGrammarIO samplesize thresholds candidates wfs = do
 
     hashctr :: IORef Int <- newIORef 0
     let mark500 = do
-        c <- readIORef hashctr
-        when (c `mod` 500 == 0) $ do
-            hPutStr stderr "#"
-            hFlush stderr
-        modifyIORef' hashctr (+1)
+            c <- readIORef hashctr
+            when (c `mod` 500 == 0) $ do
+                hPutStr stderr "#"
+                hFlush stderr
+            modifyIORef' hashctr (+1)
 
     currentGrammar :: IORef ([clabel], MulticountDFST sigma, Vec) <- newIORef ([],pruneAndPack blankdfa ,zero)
 
