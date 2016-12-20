@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, GeneralizedNewtypeDeriving, FlexibleInstances, BangPatterns, FlexibleContexts, ForeignFunctionInterface, MultiParamTypeClasses, FunctionalDependencies #-}
+{-# LANGUAGE ScopedTypeVariables, ExplicitForAll, FlexibleInstances, BangPatterns, FlexibleContexts, ForeignFunctionInterface, MultiParamTypeClasses, FunctionalDependencies #-}
 
 {- Library for handling deterministic finite state transducers.
 
@@ -14,7 +14,7 @@ Contents:
 - Glob type and function to generate transducers counting glob occurrences.
 -}
 
-module WeightedDFA (
+module Linguistics.PhonotacticLearner.WeightedDFA (
     DFST(..), fnArray, xbd,
     stateBounds, segBounds, transition,
     transduceM, transduceR, stepweights, initialWeightArray, reverseTM,
@@ -48,8 +48,9 @@ import Data.Bits
 import Data.Monoid
 import Data.Int
 import Control.Arrow ((&&&))
-import Ring
-import Probability
+
+import Linguistics.PhonotacticLearner.Util.Ring
+import Linguistics.PhonotacticLearner.Util.Probability
 
 -- initialize an array by caching a function
 fnArray :: (Ix i, IArray a e) => (i,i) -> (i -> e) -> a i e

@@ -1,16 +1,17 @@
 {-# LANGUAGE FlexibleInstances, UndecidableInstances, GeneralizedNewtypeDeriving, MultiParamTypeClasses #-}
-module Ring ( Additive(..)
-            , AdditiveGroup(..)
-            , Semiring(..)
-            , Ring
-            , RingModule(..)
-            , RSum, RProd
-            , sumR, productR
-            , Vec(..), coords, fromInts, vec
-            , innerProd, normVec, normalizeVec, consVec
-            , l1Vec, dl1Vec
-            , showFVec
-            ) where
+module Linguistics.PhonotacticLearner.Util.Ring
+    ( Additive(..)
+    , AdditiveGroup(..)
+    , Semiring(..)
+    , Ring
+    , RingModule(..)
+    , RSum, RProd
+    , sumR, productR
+    , Vec(..), coords, fromInts, vec
+    , innerProd, normVec, normalizeVec, consVec
+    , l1Vec, dl1Vec
+    , showFVec
+    ) where
 
 --import Data.Foldable
 --import Data.Monoid

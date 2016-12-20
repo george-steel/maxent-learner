@@ -1,19 +1,19 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, BangPatterns #-}
-module WeightOptimizer where
+module Linguistics.PhonotacticLearner.WeightOptimizer where
 
-import Ring
-import MaxentGrammar
-import Data.List
 import qualified Data.Map as M
+import Data.List
 import Data.Ix
 import Debug.Trace
 import qualified Data.Vector.Unboxed as V
 import System.IO
 import System.IO.Unsafe
 import Numeric
-import WeightedDFA
 import Data.Array.IArray
-import Probability
+import Linguistics.PhonotacticLearner.WeightedDFA
+import Linguistics.PhonotacticLearner.Util.Probability
+import Linguistics.PhonotacticLearner.Util.Ring
+import Linguistics.PhonotacticLearner.MaxentGrammar
 
 -- using conjugate gradient method ad described by Shewchuk in
 -- "An Introduction to the Conjugate Gradient Method Without the Agonizing Pain"

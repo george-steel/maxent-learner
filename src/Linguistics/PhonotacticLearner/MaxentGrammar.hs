@@ -6,11 +6,12 @@
              UndecidableInstances,
              BangPatterns #-}
 
-module MaxentGrammar where
+module Linguistics.PhonotacticLearner.MaxentGrammar where
 
-import Ring
-import WeightedDFA
-import Probability
+import Linguistics.PhonotacticLearner.Util.Ring
+import Linguistics.PhonotacticLearner.WeightedDFA
+import Linguistics.PhonotacticLearner.Util.Probability
+
 import Data.Array.IArray
 import Data.Array.Unboxed
 import Control.Monad

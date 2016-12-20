@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, UndecidableInstances, GeneralizedNewtypeDeriving #-}
-module Probability where
+module Linguistics.PhonotacticLearner.Util.Probability where
 
-import Ring
+import Linguistics.PhonotacticLearner.Util.Ring
 --import Data.List
 import Data.Tuple
 import Data.Monoid

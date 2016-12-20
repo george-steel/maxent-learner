@@ -1,11 +1,14 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll #-}
-module ConstraintLearner where
+module Linguistics.PhonotacticLearner(
+    generateGrammarIO
+) where
 
-import Ring
-import Probability
-import WeightedDFA
-import MaxentGrammar
-import WeightOptimizer
+import Linguistics.PhonotacticLearner.Util.Ring
+import Linguistics.PhonotacticLearner.Util.Probability
+import Linguistics.PhonotacticLearner.WeightedDFA
+import Linguistics.PhonotacticLearner.MaxentGrammar
+import Linguistics.PhonotacticLearner.WeightOptimizer
+
 import System.Random
 import Control.Monad.State
 import Control.DeepSeq
@@ -16,8 +19,6 @@ import System.IO
 import Control.Exception
 
 
-withHandler = flip catch
-
 stopsigint :: AsyncException -> IO ()
 stopsigint e = case e of
     UserInterrupt -> do
@@ -25,7 +26,14 @@ stopsigint e = case e of
         return ()
     _ -> throw e
 
--- main function to learn a list fo constraints,
+{- main entry point for constraint learning.
+
+This function makes no assumptions as to UG and instead, takes in a list of constraint candidates (in order of decreasing generality).
+These constraints take the form of a pair consisting of a label (only compared for equality to prevent duplication)
+and a DFA which counts the number of times a constraint is violated in a string.
+
+To generate a constraint candidate list, several UG functions are contained in the PhonotacticGrammar module
+-}
 generateGrammarIO :: forall g clabel sigma . (Show clabel, Ix sigma, NFData sigma, NFData clabel, Eq clabel) -- In the typical case, clabel = ClassGlob, sigma = SegRef
     => Int -- Monte Carlo sample size
     -> [Double] -- list of accuracy thresholds
@@ -56,7 +64,7 @@ generateGrammarIO samplesize thresholds candidates wfs = do
 
     currentSalad <- newIORef undefined
 
-    withHandler stopsigint $ do
+    handle stopsigint $ do
         forM_ thresholds $ \accuracy -> do
             putStrLn $ "\n\n\nStarting pass with threshold " ++ showFFloat (Just 3) accuracy ""
             writeIORef currentSalad =<< genSalad
@@ -84,29 +92,3 @@ generateGrammarIO samplesize thresholds candidates wfs = do
         putStrLn "\n\n\nAll Pases Complete."
 
     readIORef currentGrammar
-
-
-{- main entry point for constraint learning.
-
-This function makes no assumptions as to UG and instead, takes in a list of constraint candidates (in order of decreasing generality).
-These constraints take the form of a pair consisting of a label (only compared for equality to prevent duplication)
-and a DFA which counts the number of times a constraint is violated in a string.
-
-To generate a constraint candidate list, several UG functions are contained in the PhonotacticGrammar module
-
-generateGrammarIO :: (Ix sigma, Show clabel, Eq clabel, NFData sigma) => Int -- Monte Carlo sample size
-    -> [Double] -- list of accuract thresholds
-    -> [(clabel, ShortDFST sigma)] -- list of constraints to try in order. Each constraint has a label and a dfa to compute it
-    -> Lexicon sigma -- List of words to try and their frequencies
-    -> IO [(clabel, Double)]
-generateGrammarIO samplesize thresholds (possibleConstraints) wfs = do
-    ctr :: IORef Int <- newIORef 0
-    let mark100 = do
-        c <- readIORef ctr
-        when (c `mod` 100 == 0) $ do
-            putStr "#"
-            hFlush stdout
-        modifyIORef' ctr (+1)
-    gen <- newStdGen
-    evalStateT (generateGrammar (liftIO mark100) (liftIO . putStrLn) samplesize thresholds (possibleConstraints) wfs) gen
--}

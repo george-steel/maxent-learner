@@ -1,11 +1,11 @@
 {-# LANGUAGE TemplateHaskell, OverloadedStrings, ParallelListComp #-}
-import Ring
-import Probability
-import WeightedDFA
-import MaxentGrammar
-import WeightOptimizer
-import PhonotacticGrammar
-import ConstraintLearner
+import Linguistics.PhonotacticLearner
+import Linguistics.PhonotacticLearner.Util.Ring
+import Linguistics.PhonotacticLearner.Util.Probability
+import Linguistics.PhonotacticLearner.WeightedDFA
+import Linguistics.PhonotacticLearner.MaxentGrammar
+import Linguistics.PhonotacticLearner.WeightOptimizer
+import Linguistics.PhonotacticLearner.UniversalGrammar
 
 import Control.Monad
 import Data.List

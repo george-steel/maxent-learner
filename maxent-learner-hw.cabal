@@ -1,22 +1,27 @@
 name:                maxent-learner-hw
 version:             0.1.0.0
-synopsis:            Initial project template from stack
+synopsis:            Implementation of Hayes and Wilson's maxent learning algorithm for phonotactic constraint grammars.
 description:         Please see README.md
--- homepage:            https://github.com/githubuser/maxent-learner-hw#readme
--- license:             BSD3
--- license-file:        LICENSE
+homepage:            https://github.com/george-steel/maxent-learner#readme
+-- license:             GPL
 author:              George Steel
 maintainer:          george.steel@gmail.com
 -- copyright:           2016 Author name here
--- category:            Web
+category:            Linguistics
 build-type:          Simple
 extra-source-files:  README.md, ffisrc/packeddfa.c
 cabal-version:       >=1.10
 
 library
-  cc-options: -Wall -O3 -g -std=c11
+  cc-options: -Wall -std=c11
   hs-source-dirs:      src
-  exposed-modules:     Ring, Probability, WeightedDFA, MaxentGrammar, WeightOptimizer, ConstraintLearner, PhonotacticGrammar
+  exposed-modules:     Linguistics.PhonotacticLearner.Util.Ring
+                     , Linguistics.PhonotacticLearner.Util.Probability
+                     , Linguistics.PhonotacticLearner.WeightedDFA
+                     , Linguistics.PhonotacticLearner.MaxentGrammar
+                     , Linguistics.PhonotacticLearner.WeightOptimizer
+                     , Linguistics.PhonotacticLearner.UniversalGrammar
+                     , Linguistics.PhonotacticLearner
   build-depends:       base >= 4.7 && < 5, deepseq, vector, mtl, containers, random, array, text, csv
   default-language:    Haskell2010
   c-sources:           ffisrc/packeddfa.c

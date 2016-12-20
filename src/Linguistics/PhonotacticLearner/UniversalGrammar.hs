@@ -1,10 +1,11 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, GeneralizedNewtypeDeriving, OverloadedStrings #-}
-module PhonotacticGrammar where
+module Linguistics.PhonotacticLearner.UniversalGrammar where
 
-import Ring
-import Probability
-import MaxentGrammar
-import WeightedDFA
+import Linguistics.PhonotacticLearner.Util.Ring
+import Linguistics.PhonotacticLearner.Util.Probability
+import Linguistics.PhonotacticLearner.MaxentGrammar
+import Linguistics.PhonotacticLearner.WeightedDFA
+
 import Text.CSV
 import Data.Array.IArray
 import Data.Maybe
