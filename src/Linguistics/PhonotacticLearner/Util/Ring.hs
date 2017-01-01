@@ -1,51 +1,65 @@
 {-# LANGUAGE FlexibleInstances, UndecidableInstances, GeneralizedNewtypeDeriving, MultiParamTypeClasses #-}
-module Linguistics.PhonotacticLearner.Util.Ring
-    ( Additive(..)
+
+{-|
+Module: Linguistics.PhonotacticLearner.Util.Ring
+Description: Classes for rings and modules and data type for ℝ*.
+
+This module provides a hierarchy of typeclasses to describe rings and their substructures without all of the additional structure found in 'Num' (which does not apply to most rings). 'Num' instances are automatically 'Ring' instances if no explicit instance is given, making 'Ring' a drop-in replacenent for 'Num' to make more generic functions.
+
+A typeclass for algebraic modules (aka. vector spaces if over a field) is also included as well as a data type for the vector space ℝ[x]=ℝ∪ℝ²∪ℝ³∪… (usable for ℝⁿ although dimensions are not checked).
+
+In order to not clash with Num or Arrow, this module uses the unicode circled operators '⊕', '⊖', '⊗', and '⊙'. If you are using XIM (Linux) or WinCompose, add the following lines to your .XCompose file:
+
+> <Multi_key> <r> <plus> : "⊕"
+> <Multi_key> <r> <period> : "⊙"
+> <Multi_key> <r> <asterisk> : "⊗"
+> <Multi_key> <r> <minus> : "⊖"
+-}
+module Linguistics.PhonotacticLearner.Util.Ring (
+      -- * Rings
+      Additive(..)
     , AdditiveGroup(..)
     , Semiring(..)
     , Ring
-    , RingModule(..)
-    , RSum, RProd
+    , RSum(..), RProd(..)
     , sumR, productR
+    -- * Modules and vectors
+    , RingModule(..)
     , Vec(..), coords, fromInts, vec
     , innerProd, normVec, normalizeVec, consVec
     , l1Vec, dl1Vec
     , showFVec
     ) where
 
---import Data.Foldable
---import Data.Monoid
 import Numeric
 import qualified Data.Vector.Unboxed as V
 import Control.DeepSeq
+import Data.Monoid
 
---------------------------------------------------------------------------------
--- hierarchy of typeclasses for abstract algebra
+-- | Monoids with additive syntax
+class Additive g where
+    zero :: g -- ^ Additive identity
+    (⊕) :: g -> g -> g -- ^ Addition
 
--- class for additive monoids
-class Additive v where
-    zero :: v
-    (⊕) :: v -> v -> v
-
--- class for additive groups, useful for vectors and rings
-class (Additive v) => AdditiveGroup v where
-    addinv :: v -> v
-    (⊖) :: v -> v -> v
+-- | Additive groups with inverses and suntraction
+class (Additive g) => AdditiveGroup g where
+    addinv :: g -> g -- ^ Additive inverse, more general version of 'negate'
+    (⊖) :: g -> g -> g -- ^ Subtraction
     x ⊖ y = x ⊕ addinv y
 
--- typeclass for semirings. Num cannot be used as a general ring class since Num requires a norm and signum
-class (Additive r) => Semiring r where-- adition
-    one :: r
-    (⊗) :: r -> r -> r --multiplication
+-- | Semirings with addition and multiplication (but not subtraction).
+class (Additive r) => Semiring r where
+    one :: r -- ^ Multiplicative identity
+    (⊗) :: r -> r -> r -- ^ Multiplication
 
--- sombines subtraction and multiplication
+-- | Rings have both subtraction and multiplication
 class (Semiring r, AdditiveGroup r) => Ring r
 
--- adds scalar multiplication
+-- | A module over a 'Ring' r is an 'AdditiveGroup' which can be multiplied by scalars in r.
 class (Ring r, AdditiveGroup v) => RingModule r v where
-    (⊙) :: r -> v -> v
+    (⊙) :: r -> v -> v -- ^ Scalar multiplication
 
--- every Ring is a module over itself
+-- | Every Ring is a module over itself.
 instance (Ring r) => RingModule r r where
     (⊙) = (⊗)
 --------------------------------------------------------------------------------
@@ -95,14 +109,18 @@ instance (AdditiveGroup r, AdditiveGroup s) => AdditiveGroup (r,s) where
     addinv (a,b) = (addinv a, addinv b)
     (a,b) ⊖ (c,d) = (a ⊖ c, b ⊖ d)
 instance (Ring r, Ring s) => Ring (r,s)
+
+
 instance (RingModule r v, RingModule r w) => RingModule r (v,w) where
     a ⊙ (b,c) = (a ⊙ b, a ⊙ c)
 
 
 --------------------------------------------------------------------------------
 
--- take rings as sum or product monoids
+-- | 'Monoid' wrapper using addition, same as 'Sum'
 newtype RSum r = RSum r deriving (Ord, Eq, Show, Additive, AdditiveGroup, Semiring, Ring)
+
+-- | 'Monoid' wrapper using multiplication, same as 'Product'
 newtype RProd r = RProd r deriving (Ord, Eq, Show, Additive, AdditiveGroup, Semiring, Ring)
 
 instance (Additive r) => Monoid (RSum r) where
@@ -113,32 +131,34 @@ instance (Semiring r) => Monoid (RProd r) where
     mempty = RProd one
     (RProd a) `mappend` (RProd b) = RProd (a ⊗ b)
 
--- fold over ring operations, more general versiond od sum and product from Num
+-- | Fold using addition
 sumR :: (Foldable f, Additive r) => f r -> r
 sumR xs = let (RSum x) = foldMap RSum xs in x
 
+-- | Fold using multiplication
 productR :: (Foldable f, Semiring r) => f r -> r
 productR xs = let (RProd x) = foldMap RProd xs in x
 
 --------------------------------------------------------------------------------
 
--- Double is a module over Int, saves a lot of fromIntegral noise
+-- | Since ℝ is a module over ℤ, using scalar multiplication can save a lot of coersion noise.
 instance RingModule Int Double where
     x ⊙ y = fromIntegral x * y
 
-
--- polynomial-like vector space
--- behaves like union of R < R² < R³ < …
+-- | Implements variable-length vectors. Addition batween vectors of different lengths occurs by letting ℝ⊆ℝ²⊆ℝ³⊆… by embedding each length in the space op polynomials.
 newtype Vec = Vec {unVec :: V.Vector Double} deriving (Eq, Read, Show, NFData)
 
+-- | Returns a list of coordinates.
 coords :: Vec -> [Double]
 coords (Vec xs) = V.toList xs
 
-fromInts :: [Int] -> Vec
-fromInts xs = Vec . V.fromList . fmap fromIntegral $ xs
-
+-- | Convert from a list of coordinates.
 vec :: [Double] -> Vec
 vec = Vec . V.fromList
+
+-- | Convert from a list of integers.
+fromInts :: [Int] -> Vec
+fromInts xs = Vec . V.fromList . fmap fromIntegral $ xs
 
 instance Additive Vec where
     zero = Vec V.empty
@@ -159,24 +179,31 @@ instance RingModule Double Vec where
 instance RingModule Int Vec where
     a ⊙ (Vec xs) = Vec (V.map (fromIntegral a *) xs)
 
-
+-- | Standard inner product on ℝⁿ.
 innerProd :: Vec -> Vec -> Double
 innerProd (Vec xs) (Vec ys) = V.sum (V.zipWith (*) xs ys)
 
+-- | Show a vector to a certain precision, equivalent of 'showFFloat'.
 showFVec :: Maybe Int -> Vec -> String
 showFVec prec (Vec xs) = "[" ++ (unwords . fmap (\x -> showFFloat prec x []) . V.toList $ xs) ++ "]"
 
+-- | Calculate the euclidean norm of a vector.
 normVec :: Vec -> Double
 normVec x = sqrt (innerProd x x)
 
+-- | Taxicab norm.
 l1Vec :: Vec -> Double
 l1Vec (Vec xs) = V.sum (V.map abs xs)
+
+-- | Gradient of taxicab norm.
 dl1Vec :: Vec -> Vec
 dl1Vec (Vec xs) = Vec (V.map signum xs)
 
+-- | Return a vector of unit length pointing in the same direction.
 normalizeVec :: Vec -> Vec
 normalizeVec x = if n == 0 then x else (1/n) ⊙ x
     where n = normVec x
 
+-- | Add a number to the begining of the list of coordinates.
 consVec :: Double -> Vec -> Vec
 consVec x (Vec xs) = Vec (V.cons x xs)

@@ -1,5 +1,23 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, UndecidableInstances, GeneralizedNewtypeDeriving #-}
-module Linguistics.PhonotacticLearner.Util.Probability where
+
+{-|
+Module: Linguistics.PhonotacticLearner.Util.Probability
+Description: Data structures and functions for working with probabilities.
+
+Data structures and functions for counting
+
+-}
+module Linguistics.PhonotacticLearner.Util.Probability (
+    -- * Counting
+    Multicount (..),
+    getCounts, consMC, singleMC, fromMC,
+    -- * Expectations
+    Expectation(..),
+    normalizeExp,
+    -- * Sampling and Distributions
+    Cdf, massToCdf, sampleCdf, uniformSample,
+    upperConfidenceOE
+) where
 
 import Linguistics.PhonotacticLearner.Util.Ring
 --import Data.List
@@ -11,12 +29,12 @@ import Control.Monad.State
 import qualified Data.Vector.Unboxed as V
 import Control.DeepSeq
 
--- monoid for counting multiple quantities.
--- Union of the lattices Z < Z^2 < Z^3 < ...
+-- | Monoid holding a list of integer counters which are summed independently
 newtype Multicount = MC {unMC :: V.Vector Int} deriving (Eq, Show, NFData)
 
-getMC :: Multicount -> [Int]
-getMC (MC xs) = V.toList xs
+-- | Return the counts as a list of 'Int's
+getCounts :: Multicount -> [Int]
+getCounts (MC xs) = V.toList xs
 
 instance Monoid Multicount where
     mempty = MC V.empty
@@ -29,27 +47,31 @@ instance Monoid Multicount where
         where lx = V.length xs
               ly = V.length ys
 
--- add new count to head of list
+-- | Add a new count to the head of the list
 consMC :: Sum Int -> Multicount -> Multicount
 consMC (Sum x) (MC xs) = MC (V.cons x xs)
 
--- convert single counter to multicount
+-- | Use a single coutner as a Multicount.
 singleMC :: Sum Int -> Multicount
 singleMC (Sum x) = MC (V.singleton x)
 
+-- | Convert the counts to coordinates
 fromMC :: Multicount -> Vec
 fromMC (MC xs) = Vec (V.map fromIntegral xs)
 
 
 --------------------------------------------------------------------------------
 
--- Expectation semirings for transducers
+{-| Expectation semiring as described by Eisner.
 
--- expectation semiring as described by Eisner
--- holds total probability of event and the events contribution to an expectation vector
-data Expectation v = Exp { prob :: {-# UNPACK #-} !Double
-                         , exps :: !v }
-                   deriving (Eq, Show)
+Represents an events contribution to the total expectation of a vector-valued variable. Addition takes the union of mutually exclusive events and multiplication either takes the intersection fo independent events or applies a xconditional probability.
+
+As a simple example, the expectation of the total value from rolling a 2 on a 6 sided die would be @Exp (1/6) (2/6)@.
+-}
+data Expectation v = Exp {
+      prob :: {-# UNPACK #-} !Double -- ^ Probability of event occuring.
+    , exps :: !v -- ^ Event's contribution to expectation of the variable
+} deriving (Eq, Show)
 
 -- combine exclusive events
 instance (RingModule Double v) => Additive (Expectation v) where
@@ -61,17 +83,17 @@ instance (RingModule Double v) => Semiring (Expectation v) where
     one = Exp 1 zero
     (Exp p1 v1) ⊗ (Exp p2 v2) = Exp (p1 * p2) ((p1 ⊙ v2) ⊕ (p2 ⊙ v1))
 
--- expectation conditional on the event reperesented occuring
+-- Get the expectation conditional on the event actually occurring.
 normalizeExp :: (RingModule Double v) => Expectation v -> v
 normalizeExp (Exp p vs) = (1/p) ⊙ vs
 
 
 --------------------------------------------------------------------------------
 
--- cumulative probability distribution, can be sampled easily
+-- | Cumulative distribution table that can be sampled easily.
 newtype Cdf a = Cdf (M.Map Double a) deriving Show
 
--- comvert a list of probability or maxent masses to a Cdf
+-- | Generate a CDF which from a list of outcomes and their relative probabilities (their sum will eb normalized and does not have to be 1).
 massToCdf :: [(a, Double)] -> Cdf a
 massToCdf xs = Cdf (M.fromList (zip partialsums (fmap fst xs')))
     where
@@ -79,13 +101,14 @@ massToCdf xs = Cdf (M.fromList (zip partialsums (fmap fst xs')))
         totalp = sum (fmap snd xs)
         partialsums = scanl (+) 0 (fmap ((/ totalp) . snd) xs')
 
--- monadic action to sample a random value from a Cdf.
-samplecdf :: (RandomGen g, MonadState g m) => Cdf a -> m a
-samplecdf (Cdf cdm) = do
+-- | Sample a random variable according to a 'Cdf', gets the random generator state from the monad.
+sampleCdf :: (RandomGen g, MonadState g m) => Cdf a -> m a
+sampleCdf (Cdf cdm) = do
     y :: Double <- state (randomR (0,1))
     let (Just (_,x)) = M.lookupLE y cdm
     return x
 
+-- | Deterministically sample n points spaced throughout the distribution. Used when the number of samples greatly outnumbers the number of outcomes.
 uniformSample :: Cdf a -> Int -> [(a, Int)]
 uniformSample (Cdf cmf) n = zipWith subentries (tail breaks ++ [(undefined, n)]) breaks
     where
@@ -94,8 +117,9 @@ uniformSample (Cdf cmf) n = zipWith subentries (tail breaks ++ [(undefined, n)])
 
 --------------------------------------------------------------------------------
 
+-- | Get the upper confidence bound of Observed/Expected
 upperConfidenceOE :: Double -> Double -> Double
 upperConfidenceOE o e = if p >= 1 then 1 else min 1 (p + 3*v)
     where
-        p = (o + 1.5) / (e+1)
+        p = (o + 0.5) / (e+1)
         v = sqrt (p * (1-p) / (e+1))

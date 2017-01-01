@@ -1,26 +1,41 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, FlexibleInstances, BangPatterns, FlexibleContexts, ForeignFunctionInterface, MultiParamTypeClasses, FunctionalDependencies #-}
 
-{- Library for handling deterministic finite state transducers.
+{- |
+Module: Linguistics.PhonotacticLearner.WeightedDFA
+Description: Library for handling deterministic finite state transducers
 
 Contents:
-- A polymorphic DFST implementation (a functor on the output type) capable of transducing into monoids and semirings (multiplicatively), and adding up all paths of semiring transducers. Input ranges are required to be Ix rectangles.
-- Functions to prune unreachable states and compute the product construction
-- Fast, compact implementations for common output types (Sum Int, Multicount, Expectation Vec, Expectation Double) which can be packed from or unpacked into the polymorphic type.
-- Optimized C functions for performing common operations on the specialized types:
-    - Packing strings into a compact format
-    - Transducing packed strings into integer counts and Multicounts
-    - Summing over all paths of expectation transducers
-    - Applying maxent weights to vector counts to get expectations
-- Glob type and function to generate transducers counting glob occurrences.
+
+* A polymorphic DFST implementation (a functor on the output type) capable of transducing into monoids and semirings (multiplicatively), and adding up all paths of semiring transducers. Input ranges are required to be Ix rectangles.
+
+* Functions to prune unreachable states and compute the product construction
+
+* Fast, compact implementations for common output types (Sum Int, Multicount, Expectation Vec, Expectation Double) which can be packed from or unpacked into the polymorphic type.
+
+* Optimized C functions for performing common operations on the specialized types:
+
+    * Packing strings into a compact format
+
+    * Transducing packed strings into integer counts and Multicounts
+
+    * Summing over all paths of expectation transducers
+
+    * Applying maxent weights to vector counts to get expectations
+
+* Glob type and function to generate transducers counting glob occurrences.
 -}
 
 module Linguistics.PhonotacticLearner.WeightedDFA (
+    -- * Polymorphic DFSTs
     DFST(..), fnArray, xbd,
     stateBounds, segBounds, transition,
     transduceM, transduceR, stepweights, initialWeightArray, reverseTM,
+
+    -- * Specialized DFSTs
     PackedDFA(..), pruneUnreachable, pruneAndPack,
     rawIntersection, dfaProduct, nildfa,
 
+    -- * Fast transduction
     PackedText, packSingleText, packMultiText,
     ShortDFST, transducePackedShort,
     MulticountDFST, transducePackedMulti,

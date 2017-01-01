@@ -140,10 +140,10 @@ lexLogProbPartialDeriv lengths oviols ctr weights dir = innerProd (dl1Vec weight
 -- for efficiency, evaluate this once than sequence the action repeatedly as intermediate values will be memoized.
 sampleWord :: forall g sigma m . (RandomGen g, Ix sigma, MonadState g m) => MaxentProbTransducer sigma -> Int -> (Int -> m [sigma])
 sampleWord dfa maxn = backDists `seq` \n -> do
-        fs <- samplecdf (finalStates ! n)
+        fs <- sampleCdf (finalStates ! n)
         rcs <- flip evalStateT fs . forM (reverse . range $ (1,n)) $ \k -> do
             s <- get
-            (c,s') <- lift . samplecdf $ backDists!(k,s)
+            (c,s') <- lift . sampleCdf $ backDists!(k,s)
             put s'
             return c
         return (reverse rcs)

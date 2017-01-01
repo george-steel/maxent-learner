@@ -1,5 +1,5 @@
 name:                maxent-learner-hw
-version:             0.1.0.0
+version:             0.1
 synopsis:            Implementation of Hayes and Wilson's maxent learning algorithm for phonotactic constraint grammars.
 description:         Please see README.md
 homepage:            https://github.com/george-steel/maxent-learner#readme
@@ -26,12 +26,15 @@ library
   default-language:    Haskell2010
   c-sources:           ffisrc/packeddfa.c
 
-executable maxent-learner-hw-exe
+executable hw-learner
   hs-source-dirs:      app
   main-is:             Main.hs
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base
                      , maxent-learner-hw
+                     , optparse-applicative
+                     , containers
+                     , text
   default-language:    Haskell2010
 
 test-suite maxent-learner-hw-test
