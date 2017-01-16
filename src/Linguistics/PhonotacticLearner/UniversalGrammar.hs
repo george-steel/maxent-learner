@@ -11,12 +11,16 @@ import Data.Array.IArray
 import Data.Maybe
 import Data.Tuple
 import Data.List
+import Data.Char
 import Data.Monoid
 import Control.Monad
+import Control.Applicative hiding (many, some)
 import Control.DeepSeq
-import Control.Arrow
+import Control.Arrow((***),(&&&),first,second)
 import qualified Data.Text as T
 import qualified Data.Map.Lazy as M
+import Text.ParserCombinators.ReadP
+import Text.Read(Read(..),lift,parens)
 
 
 -- enumeration for feature states (can be +,-,0)
@@ -77,7 +81,9 @@ csvToFeatureTable readSeg rawcsv = do
                         let fstate = case segfield of
                                         "+"   -> FPlus
                                         "✓"   -> FPlus
+                                        "√"   -> FPlus
                                         "-"   -> FMinus
+                                        "−"   -> FMinus
                                         _     -> FOff
                         return ((segidx, featidx), fstate)
     let segmap   = M.fromList (fmap swap (assocs seglist))
@@ -108,6 +114,25 @@ instance Show NaturalClass where
                                         FOff -> "0")
                                   ++ T.unpack fn
 
+isPrintNelem :: String -> Char -> Bool
+isPrintNelem s c =  isPrint c && not (isSpace c) && c `notElem` s
+
+featP :: ReadP (FeatureState, T.Text)
+featP = do
+    skipSpaces
+    state <- choice [FPlus <$ char '+', FPlus <$ char '✓', FPlus <$ char '√', FMinus <$ char '-', FMinus <$ char '−', FOff <$ char '0'] <++ return FPlus
+    feat <- (:) <$> satisfy (isPrintNelem "0123456789+-√−✓(){}[]¬^") <*> munch (isPrintNelem "(){}[]¬^")
+    return (state, T.pack feat)
+
+classP = between (char '[') (char ']') (NClass
+     <$> ((True <$ char '¬') +++ (True <$ char '^') +++ return False)
+     <*> many featP)
+
+instance Read NaturalClass where
+    readPrec = parens (lift (skipSpaces >> classP))
+
+
+
 xor :: Bool -> Bool -> Bool
 xor False p = p
 xor True p = not p
@@ -133,6 +158,22 @@ instance Show ClassGlob where
         suf GSingle = ""
         suf GPlus = "₁"
         suf GStar = "₀"
+
+globRepsP :: ReadP GlobReps
+globRepsP = choice [GPlus <$ char '+', GPlus <$ char '₁', GStar <$ char '*', GStar <$ char '₀', return GSingle]
+
+classGlobP :: ReadP ClassGlob
+classGlobP = do
+    isinit <- (True <$ char '#') +++ return False
+    gparts <- many1 $ ((GStar, NClass False []) <$ char '…') +++ do
+        cls <- classP +++ (NClass False [(FPlus,"syllabic")] <$ char 'V') +++ (NClass False [(FMinus,"syllabic")] <$ char 'C')
+        rep <- globRepsP
+        return (rep,cls)
+    isfin <- (True <$ char '#') +++ return False
+    return (ClassGlob isinit isfin gparts)
+
+instance Read ClassGlob where
+    readPrec = parens (lift (skipSpaces >> classGlobP))
 
 classesToLists :: FeatureTable sigma -> ClassGlob -> ListGlob SegRef
 classesToLists ft (ClassGlob isinit isfin gparts) = ListGlob isinit isfin (fmap (second (classToSeglist ft)) gparts)
@@ -232,6 +273,15 @@ ugLimitedTrigrams cls rcls = fmap snd . sortOn fst $ do
         lg = ListGlob False False [(GSingle,l1),(GSingle,l2),(GSingle,l3)]
     return (w, (g,lg))
 
+ugLongDistance :: [(Int, NaturalClass,SegSet SegRef)] -> [(NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
+ugLongDistance cls rcls = fmap snd . sortOn fst $ do
+    (w1,c1,l1) <- cls
+    (c2,l2) <- rcls
+    (w3,c3,l3) <- cls
+    let w = w1+w3
+        g = ClassGlob False False [(GSingle,c1),(GPlus,c2),(GSingle,c3)]
+        lg = ListGlob False False [(GSingle,l1),(GPlus,l2),(GSingle,l3)]
+    return (w, (g,lg))
 
 ugMiddleHayesWilson :: [(Int, NaturalClass,SegSet SegRef)] -> [(NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugMiddleHayesWilson cls rcls = join [ ugSingleClasses cls

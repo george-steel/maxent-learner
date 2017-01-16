@@ -22,7 +22,15 @@ library
                      , Linguistics.PhonotacticLearner.WeightOptimizer
                      , Linguistics.PhonotacticLearner.UniversalGrammar
                      , Linguistics.PhonotacticLearner
-  build-depends:       base >= 4.7 && < 5, deepseq, vector, mtl, containers, random, array, text, csv
+  build-depends:       base >= 4.7 && < 5
+                     , deepseq
+                     , vector
+                     , mtl
+                     , containers
+                     , random
+                     , array
+                     , text
+                     , csv
   default-language:    Haskell2010
   c-sources:           ffisrc/packeddfa.c
 
@@ -35,6 +43,12 @@ executable hw-learner
                      , optparse-applicative
                      , containers
                      , text
+                     , file-embed
+                     , parallel
+                     , deepseq
+                     , array
+                     , mtl
+                     , random
   default-language:    Haskell2010
 
 test-suite maxent-learner-hw-test
