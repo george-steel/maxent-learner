@@ -1,4 +1,14 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, BangPatterns #-}
+
+{-|
+Module: Linguistics.PhonotacticLearner.MaxentGrammar.WeightOptimizer
+Description: Functions for calculating optimal weights in maxent grammar.
+License: GPL-2+
+Copyright: © 2016-2017 George Steel and Peter Jurgec
+Maintainer: george.steel@gmail.com
+
+-}
+
 module Linguistics.PhonotacticLearner.WeightOptimizer where
 
 import qualified Data.Map as M

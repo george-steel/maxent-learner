@@ -1,20 +1,19 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, FlexibleInstances, BangPatterns, FlexibleContexts, ForeignFunctionInterface, MultiParamTypeClasses, FunctionalDependencies #-}
 
-{- |
+{-|
 Module: Linguistics.PhonotacticLearner.WeightedDFA
 Description: Library for handling deterministic finite state transducers
+License: GPL-2+
+Copyright: © 2016-2017 George Steel and Peter Jurgec
+Maintainer: george.steel@gmail.com
 
-Contents:
-
-* A polymorphic DFST implementation (a functor on the output type) capable of transducing into monoids and semirings (multiplicatively), and adding up all paths of semiring transducers. Input ranges are required to be Ix rectangles.
-
-* Functions to prune unreachable states and compute the product construction
+Implementations of deterministic finite state transducers containing both a polymorphic 'DFST'@' functor and a typeclass for fast specialized types (with several implementations provided). Input alphabets are assumed to be finite rectangles inside 'Ix' types. Trandsuction functions are provided for both 'Monoid' and 'Semiring' output types. DFSTs may be created directly, generated from globs, or from smaller DFSTs using the product construction.
 
 * Fast, compact implementations for common output types (Sum Int, Multicount, Expectation Vec, Expectation Double) which can be packed from or unpacked into the polymorphic type.
 
-* Optimized C functions for performing common operations on the specialized types:
+Optimized C functions for common output types (@'Sum' 'Int'@, 'Multicount', @'Expectation' 'Vec'@, @'Expectation' 'Double'@) are included which use the 'PackedDFA' typeclass to convert to and from the generic type.  The specialized types additionally support the following operations.
 
-    * Packing strings into a compact format
+    * Packing strings into a compact format ('PackedText')
 
     * Transducing packed strings into integer counts and Multicounts
 
@@ -22,12 +21,13 @@ Contents:
 
     * Applying maxent weights to vector counts to get expectations
 
-* Glob type and function to generate transducers counting glob occurrences.
 -}
 
 module Linguistics.PhonotacticLearner.WeightedDFA (
+    fnArray, xbd,
+
     -- * Polymorphic DFSTs
-    DFST(..), fnArray, xbd,
+    DFST(..),
     stateBounds, segBounds, transition,
     transduceM, transduceR, stepweights, initialWeightArray, reverseTM,
 
@@ -67,7 +67,7 @@ import Control.Arrow ((&&&))
 import Linguistics.PhonotacticLearner.Util.Ring
 import Linguistics.PhonotacticLearner.Util.Probability
 
--- initialize an array by caching a function
+-- | Create an array by caching a function over a rectangle. Depending on the array type used, this can be used to memoise or precompute.
 fnArray :: (Ix i, IArray a e) => (i,i) -> (i -> e) -> a i e
 fnArray bds f = array bds (fmap (\x -> (x, f x)) (range bds))
 {-# INLINE fnArray #-}

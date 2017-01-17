@@ -1,4 +1,14 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, GeneralizedNewtypeDeriving, OverloadedStrings #-}
+
+{-|
+Module: Linguistics.PhonotacticLearner.UniversalGrammar
+Description: Description of phonological features and generation of candidate constraint sets.
+License: GPL-2+
+Copyright: © 2016-2017 George Steel and Peter Jurgec
+Maintainer: george.steel@gmail.com
+
+-}
+
 module Linguistics.PhonotacticLearner.UniversalGrammar where
 
 import Linguistics.PhonotacticLearner.Util.Ring

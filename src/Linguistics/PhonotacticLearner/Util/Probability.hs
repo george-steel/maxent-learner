@@ -3,6 +3,9 @@
 {-|
 Module: Linguistics.PhonotacticLearner.Util.Probability
 Description: Data structures and functions for working with probabilities.
+License: GPL-2+
+Copyright: © 2016-2017 George Steel and Peter Jurgec
+Maintainer: george.steel@gmail.com
 
 Data structures and functions for counting
 
@@ -64,7 +67,7 @@ fromMC (MC xs) = Vec (V.map fromIntegral xs)
 
 {-| Expectation semiring as described by Eisner.
 
-Represents an events contribution to the total expectation of a vector-valued variable. Addition takes the union of mutually exclusive events and multiplication either takes the intersection fo independent events or applies a xconditional probability.
+Represents an events contribution to the total expectation of a vector-valued variable. Addition takes the union of mutually exclusive events and multiplication either takes the intersection fo independent events or applies a conditional probability.
 
 As a simple example, the expectation of the total value from rolling a 2 on a 6 sided die would be @Exp (1/6) (2/6)@.
 -}
@@ -83,7 +86,7 @@ instance (RingModule Double v) => Semiring (Expectation v) where
     one = Exp 1 zero
     (Exp p1 v1) ⊗ (Exp p2 v2) = Exp (p1 * p2) ((p1 ⊙ v2) ⊕ (p2 ⊙ v1))
 
--- Get the expectation conditional on the event actually occurring.
+-- | Get the expectation conditional on the event actually occurring.
 normalizeExp :: (RingModule Double v) => Expectation v -> v
 normalizeExp (Exp p vs) = (1/p) ⊙ vs
 

@@ -6,6 +6,15 @@
              UndecidableInstances,
              BangPatterns #-}
 
+{-|
+Module: Linguistics.PhonotacticLearner.MaxentGrammar.MaxentGrammar
+Description: Functions to model maxent grammars using DFSTs
+License: GPL-2+
+Copyright: © 2016-2017 George Steel and Peter Jurgec
+Maintainer: george.steel@gmail.com
+
+-}
+
 module Linguistics.PhonotacticLearner.MaxentGrammar where
 
 import Linguistics.PhonotacticLearner.Util.Ring

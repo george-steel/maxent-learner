@@ -1,4 +1,14 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll #-}
+
+{-|
+Module: Linguistics.PhonotacticLearner
+Description: Utility for automatically inferring a maxent grammar form a candidate constraint set and lexicon.
+License: GPL-2+
+Copyright: © 2016-2017 George Steel and Peter Jurgec
+Maintainer: george.steel@gmail.com
+
+-}
+
 module Linguistics.PhonotacticLearner(
     generateGrammarIO
 ) where
