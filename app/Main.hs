@@ -74,7 +74,7 @@ parseOpts = ParsedArgs <$>
             <*> optional (strOption $ long "trigrams" <> short '3' <> metavar "COREFEATURES" <>
                 help "Allow trigram constraints where at least one class uses a single one of the following features (comma-separated).")
             <*> optional (strOption $ long "longdistance" <> short 'l' <> metavar "SKIPFEATURES" <>
-                help "Allow constraints with two classes separated by a run of one of the so")
+                help "Allow constraints with two classes separated by a run of characters possibly restricted to all having one of the following features.")
             ) (fullDesc <> progDesc "Learn a phonotactic grammar from a given lexicon"))
         <> command "gensalad" (info (GenSalad <$> strArgument (metavar "GRAMMAR"))
             (fullDesc <> progDesc "Generate random words from an already-calculated grammar")))
