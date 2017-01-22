@@ -24,6 +24,7 @@ library
                      , Linguistics.PhonotacticLearner.MaxentGrammar
                      , Linguistics.PhonotacticLearner.WeightOptimizer
                      , Linguistics.PhonotacticLearner.UniversalGrammar
+                     , Linguistics.PhonotacticLearner.UniversalGrammar.Generators
                      , Linguistics.PhonotacticLearner
   build-depends:       base >= 4.7 && < 5
                      , deepseq

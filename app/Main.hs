@@ -17,6 +17,7 @@ GNU General Public License for more details.
 
 import Linguistics.PhonotacticLearner
 import Linguistics.PhonotacticLearner.UniversalGrammar
+import Linguistics.PhonotacticLearner.UniversalGrammar.Generators
 import Linguistics.PhonotacticLearner.WeightedDFA
 import Linguistics.PhonotacticLearner.Util.Ring
 import Linguistics.PhonotacticLearner.Util.Probability
@@ -42,7 +43,7 @@ import Control.Exception
 import Control.Parallel.Strategies
 import System.Random
 
-data SegmentType = Chars | Words | Fierro deriving (Enum, Eq, Ord, Read, Show)
+data SegmentType = Chars | Words | Fiero deriving (Enum, Eq, Ord, Read, Show)
 
 data Command = Learn {
         lexicon :: FilePath,
@@ -82,7 +83,7 @@ parseOpts = ParsedArgs <$>
         help "Use the features and segment list from a feature table in CSV format (a table for IPA is used by default).")
     <*> (flag' Chars (long "charsegs" <> short 'c' <> help "Use characters as segments (default).")
         <|> flag' Words (long "wordsegs" <> short 'w' <> help "Separate segments by spaces.")
-        <|> flag' Fierro (long "fierrosegs" <> help "Parse segments by repeatedly taking the longest possible match and use ' to break up unintended digraphs (used for Fierro orthography).")
+        <|> flag' Fiero (long "fierosegs" <> help "Parse segments by repeatedly taking the longest possible match and use ' to break up unintended digraphs (used for Fiero orthography).")
         <|> pure Chars)
     <*> option auto (long "samples" <> short 'n' <> value 3000 <> help "Number of samples to use for salad generation.")
     <*> optional (strOption $ long "output" <> short 'o' <> metavar "OUTFILE" <> help "Record final output to OUTFILE as well as stdout.")
@@ -142,7 +143,7 @@ main = do
             let segmenter = case segtype args of
                     Words -> words
                     Chars -> fmap return
-                    Fierro -> error "Fierro not implemented"
+                    Fiero -> segmentFiero (elems (segNames ft))
                 cls = force $ classesByGenerality ft 3
             lexdata <- readFile lexfile
             let lexlist = (if lfreqs then freqreader else nofreqreader) ft segmenter lexdata
@@ -189,7 +190,7 @@ main = do
                 unsegmenter = case segtype args of
                     Words -> unwords
                     Chars -> join
-                    Fierro -> error "Fierro not implemented"
+                    Fiero -> joinFiero (elems (segNames ft))
 
             evaluate . force $ grammar
             evaluate . force $ dfa

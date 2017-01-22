@@ -35,13 +35,13 @@ module Linguistics.PhonotacticLearner.WeightedDFA (
     PackedDFA(..), pruneUnreachable, pruneAndPack,
     rawIntersection, dfaProduct, nildfa,
 
-    -- * Fast transduction
     PackedText, packSingleText, packMultiText,
     ShortDFST, transducePackedShort,
     MulticountDFST, transducePackedMulti,
     ExpVecDFST, weightExpVec, expsByLengthVec,
     ExpDoubleDFST, weightExpPartial, expsByLengthDouble,
 
+    -- * Glob recognition
     GlobReps(..), SegSet, ListGlob(..), matchCounter
 )where
 

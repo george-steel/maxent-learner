@@ -2,7 +2,7 @@
 
 A tool for automatically inferring phonotactic grammars from a lexicon and using those grammars to generate random text, based on Hayes and Wilson's [A Maximum Entropy Model of Phonotactics and Phonotactic Learning](http://www.linguistics.ucla.edu/people/hayes/Phonotactics/Index.htm).  This package provides functionality both as a Haskell library and as a command line tool.
 
-To compile this package, run `stack build` in the root of this repository. Run `stack haddock` to build the library documentation. The library may be useful if you wish to use a custom set of candidate constraints beyond the generators offered by the command lien tool.
+To compile this package, run `stack build` in the root of this repository. Run `stack haddock` to build the library documentation. The library may be useful if you wish to use a custom set of candidate constraints beyond the generators offered by the command line tool.
 
 ## Command line usage
 
