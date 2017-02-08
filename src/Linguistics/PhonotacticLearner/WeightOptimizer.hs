@@ -9,7 +9,13 @@ Maintainer: george.steel@gmail.com
 
 -}
 
-module Linguistics.PhonotacticLearner.WeightOptimizer where
+module Linguistics.PhonotacticLearner.WeightOptimizer (
+    traceInline, regulaFalsiSearch,
+
+    conjugateGradientSearch,
+
+    llpOptimizeWeights
+) where
 
 import qualified Data.Map as M
 import Data.List
@@ -97,8 +103,8 @@ zeroNeg (Vec v) = (Vec (V.map (\x -> if x < 0.01 then 0 else x) v), V.any (\x ->
     where hasnegs = V.any (< 0) v
 
 -- line search specialized for lexLogProb
-llpLineSearch :: (Ix sigma) => Array Length Int -> Vec -> MulticountDFST sigma -> Vec -> Vec -> Vec
-llpLineSearch lengths oviols ctr weights sdir = regulaFalsiSearch 0.01 (lexLogProbPartialDeriv lengths oviols ctr) weights sdir
+--llpLineSearch :: (Ix sigma) => Array Length Int -> Vec -> MulticountDFST sigma -> Vec -> Vec -> Vec
+--llpLineSearch lengths oviols ctr weights sdir = regulaFalsiSearch 0.01 (lexLogProbPartialDeriv lengths oviols ctr) weights sdir
 
 -- calculate weights to maximize probability of lexicon.
 -- takes starting position of search which MUST have the correct number of entries (do not use `zero`)
@@ -106,6 +112,6 @@ llpOptimizeWeights :: (Ix sigma) => Array Length Int -> PackedText sigma -> Mult
 llpOptimizeWeights lengths pwfs dfa initweights = let oviols = fromMC (transducePackedMulti dfa pwfs)
                                          in conjugateGradientSearch (0.01, 0.005)
                                                                     zeroNeg
-                                                                    (lexLogProbTotalDeriv lengths oviols dfa)
-                                                                    (lexLogProbPartialDeriv lengths oviols dfa)
+                                                                    (lexLogProbTotalDeriv dfa lengths oviols)
+                                                                    (lexLogProbPartialDeriv dfa lengths oviols)
                                                                     initweights

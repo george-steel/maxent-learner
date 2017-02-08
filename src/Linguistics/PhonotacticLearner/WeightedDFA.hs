@@ -29,7 +29,7 @@ module Linguistics.PhonotacticLearner.WeightedDFA (
     -- * Polymorphic DFSTs
     DFST(..),
     stateBounds, segBounds, transition,
-    transduceM, transduceR, stepweights, initialWeightArray, reverseTM,
+    transduceM, transduceR, --stepweights, initialWeightArray, reverseTM,
 
     -- * Specialized DFSTs
     PackedDFA(..), pruneUnreachable, pruneAndPack,
@@ -62,7 +62,7 @@ import Data.List
 import Data.Bits
 import Data.Monoid
 import Data.Int
-import Control.Arrow ((&&&))
+import Control.Arrow ((&&&), first, second)
 
 import Linguistics.PhonotacticLearner.Util.Ring
 import Linguistics.PhonotacticLearner.Util.Probability
@@ -72,16 +72,16 @@ fnArray :: (Ix i, IArray a e) => (i,i) -> (i -> e) -> a i e
 fnArray bds f = array bds (fmap (\x -> (x, f x)) (range bds))
 {-# INLINE fnArray #-}
 
--- turns a pair of interval tuples into an interval of pairs
+-- | Turn a pair of interval tuples into an interval of pairs. Used to compute array bounds for a cartesian product.
 xbd :: (a,a) -> (b,b) -> ((a,b), (a,b))
 xbd (w,x) (y,z) = ((w,y), (x,z))
 {-# INLINE xbd #-}
 
 
 
--- Type for deterministic finite state transducers.
--- The array maps from (state, character) -> (next state, weight output)
--- both state labels and characters to consume must be contiguous ranges.
+-- | Polymorphic type for deterministic finite state transducers.
+-- For an efficient implementation, the set of states and input characters are both limited to be 'Ix' rectangles and their product is the array bounds.
+-- This type is a functor over its output type (note that transduction is only possible into a 'Monoid' or 'Semiring').
 data DFST q sigma k = DFST { initialState :: q
                            , transitionMatrix :: Array (q,sigma) (q,k)
                            , finalWeights :: Array q k
@@ -91,15 +91,18 @@ instance (NFData q, NFData sigma, NFData k) => NFData (DFST q sigma k) where
     rnf (DFST q0 tm fw) = q0 `seq` rnf tm `seq` rnf fw
 
 
--- bounds for state labels
+instance (Ix q, Ix sigma) => Functor (DFST q sigma) where
+    fmap f (DFST q0 tm fw) = DFST q0 (fmap (second f) tm) (fmap f fw)
+
+-- | bounds for state labels
 stateBounds :: (Ix q, Ix sigma) => DFST q sigma w -> (q,q)
 stateBounds (DFST _ arr _) = let ((a,_), (b,_)) = bounds arr in (a,b)
 
--- boounds for accepted segments (characters)
+-- | boounds for accepted segments (characters)
 segBounds :: (Ix q, Ix sigma) => DFST q sigma k -> (sigma,sigma)
 segBounds (DFST _ arr _) = let ((_,a), (_,b)) = bounds arr in (a,b)
 
--- advance by one state and get weight output
+-- | advance by one state and get weight output
 transition :: (Ix q, Ix sigma) => DFST q sigma k -> q -> sigma -> (q,k)
 transition (DFST _ arr _) s c = arr!(s,c)
 
@@ -111,31 +114,33 @@ advanceState (DFST _ arr _) s c = fst (arr!(s,c))
 {-# INLINE transition #-}
 {-# INLINE advanceState #-}
 
-instance (Ix q, Ix sigma) => Functor (DFST q sigma) where
-    fmap f (DFST q0 tm fw) = DFST q0 (fmap (fmap f) tm) (fmap f fw)
 
 
 
-
--- Structure holding text and word frequencies as a flat array of segment indices (in the input rectangle).
--- This can be transduced very quickly using the specialized functions.
+-- | Structure holding text and word frequencies as a flat array of segment indices (in the input rectangle) for fast transduction.
 data PackedText sigma = PackedText !(sigma,sigma) !(SV.Vector Int16) !(SV.Vector Int32)
 
+-- | Pack a single string
 packSingleText :: Ix sigma => (sigma,sigma) -> [sigma] -> PackedText sigma
 packSingleText cbound t = PackedText cbound (SV.fromList $ fmap pchar t ++ [-1,-2]) (SV.singleton 1)
     where pchar = fromIntegral . index cbound
 
+-- | Pack a list of string, fewquency pairs
 packMultiText :: Ix sigma => (sigma,sigma) -> [([sigma],Int)] -> PackedText sigma
 packMultiText cbound ts = PackedText cbound (SV.fromList $ foldr constext [-2] ts) (SV.fromList $ fmap (fromIntegral . snd) ts)
     where constext (t,_) lts  = fmap (fromIntegral . index cbound) t ++ [-1] ++ lts
 
 
 
--- tyopeclass for specialized versions DFAs
+-- | Typeclass for converting speaiclized DFSTs to and from polymorphic ones. This is used by several optimized versions for various output types that can be manupulated by fast C functions.
 class PackedDFA pd k | pd -> k where
+    -- | Number fo states in DFA
     numStates :: (Ix sigma) => pd sigma -> Int
+    -- | Bounds of input rectangle
     psegBounds :: (Ix sigma) => pd sigma -> (sigma, sigma)
+    -- | umpack
     unpackDFA :: (Ix sigma) => pd sigma -> DFST Int sigma k
+    -- | Pack a DFA from its component functions. Use 'pruneAndPack' to convert a polymorphic 'DFST'.
     packDFA :: forall sigma . (Ix sigma)
             => Int16 -- number of states
             -> Int16 -- initial state
@@ -149,7 +154,7 @@ class PackedDFA pd k | pd -> k where
 
 
 
--- remove unreachable states and renumber as integers (starting from 1) using a mark-sweep algorithm
+-- | Remove unreachable states and renumber as integers (starting from 1) using a mark-sweep algorithm. Result is polymorphic.
 pruneUnreachable :: forall q sigma k . (Ix q, Ix sigma) => DFST q sigma k -> DFST Int sigma k
 pruneUnreachable dfa = DFST (newlabels ! initialState dfa) newTM newFW
     where
@@ -176,7 +181,7 @@ pruneUnreachable dfa = DFST (newlabels ! initialState dfa) newTM newFW
         newTM = fnArray tmbound newTF
         newFW = fnArray nbound ((finalWeights dfa !) . (oldlabels !))
 
--- prune unreachable states and pack into a specialized implementation
+-- | Prune unreachable states and pack into a specialized implementation
 pruneAndPack :: forall q sigma pd k. (Ix q, Ix sigma, PackedDFA pd k) => DFST q sigma k -> pd sigma
 pruneAndPack dfa = packDFA (fromIntegral ns) (newlabels ! initialState dfa) cbound newTF newTW newFW
     where
@@ -204,7 +209,8 @@ pruneAndPack dfa = packDFA (fromIntegral ns) (newlabels ! initialState dfa) cbou
         newFW = (finalWeights dfa !) . (oldlabels !) . fromIntegral
 
 
--- raw product construction
+-- | Lifts a weight combining function into one that combines DFAs. Performs no pruning and new states are all pairs of old ones.
+-- For boolean weights, use (&&) for intersection and (||) for union.
 rawIntersection :: (Ix q1, Ix q2, Ix sigma) => (k1 -> k2 -> k3) -> DFST q1 sigma k1 -> DFST q2 sigma k2 -> DFST (q1,q2) sigma k3
 rawIntersection f dfa1@(DFST qi1 tm1 fw1) dfa2@(DFST qi2 tm2 fw2)
         | cbound == cbound2 = DFST (qi1,qi2) (fnArray tmbound newTF) (fnArray qbound' newFW)
@@ -221,50 +227,34 @@ rawIntersection f dfa1@(DFST qi1 tm1 fw1) dfa2@(DFST qi2 tm2 fw2)
                              in ((t1,t2), f w1 w2)
         newFW (s1,s2) = f (fw1!s1) (fw2!s2)
 
--- Product construction for two transducers, taking a combining function for the weights.
--- For boolean weights, use (&&) for intersection and (||) for union.
+-- | Product construction with pruning.
 dfaProduct :: (Ix l1, Ix l2, Ix sigma) => (w1 -> w2 -> w3) -> DFST l1 sigma w1 -> DFST l2 sigma w2 -> DFST Int sigma w3
 dfaProduct f dfa1 dfa2 = pruneUnreachable (rawIntersection f dfa1 dfa2)
 
+-- | Given input bounds, Construct a DFST which always returns mempty for any string.
 nildfa :: (Ix sigma, Monoid k) => (sigma,sigma) -> DFST Int sigma k
 nildfa (a,z) = DFST 1 tm fm
     where
         tm = fnArray ((1,a),(1,z)) (const (1,mempty))
         fm = fnArray (1,1) (const mempty)
 
--- transduce a string of segments where and output the product of the weights (as a Monoid)
+-- | Transduce a string of segments where and output the product of the weights (as a Monoid).
 transduceM :: (Ix q, Ix sigma, Monoid k) => DFST q sigma k -> [sigma] -> k
 transduceM (DFST q0 tm fw) cs = mconcat ws <> (fw ! fq)
     where (fq, ws) = mapAccumL (curry (tm!)) q0 cs
 
--- transduce a string of segments where and output the product of the weights (as a Ring)
+-- | Transduce a string of segments where and output the product of the weights (as a Ring).
 transduceR :: (Ix q, Ix sigma, Semiring k) => DFST q sigma k -> [sigma] -> k
 transduceR (DFST q0 tm fw) cs = productR ws ⊗ (fw ! fq)
     where (fq, ws) = mapAccumL (curry (tm!)) q0 cs
 
--- used for statistical calculations over an entire dfa with ring weights (e.g. probabilities)
--- given an array mapping states to weights (e.g, a maxent distribution),
--- gives a new distribution after transducing an additional character
-stepweights :: (Ix q, Ix sigma, Semiring k) => DFST q sigma k -> Array q k -> Array q k
-stepweights dfa@(DFST _ tm _) prev = accumArray (⊕) zero sbound (fmap pathweight (range (bounds tm)))
-    where
-        sbound = stateBounds dfa
-        pathweight (s,c) = let (ns,w) = tm!(s,c) in (ns, (prev!s) ⊗ w)
-
--- gives an array from states to weights with 1 in the first position and 0 elsewhere
-initialWeightArray :: (Ix l, Ix sigma, Semiring w) => DFST l sigma w -> Array l w
-initialWeightArray dfa = fnArray (stateBounds dfa) (\x -> if x == initialState dfa then one else zero)
-
--- converts to an NFA with all the arrows reversed
-reverseTM :: (Ix q, Ix sigma) => DFST q sigma k -> Array (q,sigma) [(q,k)]
-reverseTM (DFST _ arr _) = accumArray (flip (:)) [] (bounds arr) (fmap (\((s,c),(s',w)) -> ((s',c),(s,w))) (assocs arr))
 
 
 ------------------------------------------------------------------------------
 -- structurees for packed DFST counter with compact representation optimized c transduce implementation
 
 
--- optimized version specialized to integers
+-- | Optimized DFST specialized to transduce integers
 data ShortDFST sigma = ShortDFST {-# UNPACK #-} !Int16 -- number of states
                                  {-# UNPACK #-} !Int16 -- initial state
                                  {-# UNPACK #-} !(sigma, sigma) -- segment bounds
@@ -310,6 +300,7 @@ instance PackedDFA ShortDFST (Sum Int) where
         tm' = fnArray tbound (tf . idx)
         fwm' = fnArray qbound (fromIntegral . (fwm SV.!))
 
+-- | Fast transduction of integers. For multiple words, returns the sum of all transductions.
 transducePackedShort :: (Ix sigma) => ShortDFST sigma -> PackedText sigma -> Int
 transducePackedShort (ShortDFST ns q0 cb tf tw fw) (PackedText cb' tvec fvec)
     | cb == cb' = fromIntegral . unsafePerformIO $
@@ -323,7 +314,7 @@ transducePackedShort (ShortDFST ns q0 cb tf tw fw) (PackedText cb' tvec fvec)
 
 
 
-
+-- | Optimized DFST specialized to transduce into 'Multicount' mnd count multiple quantities in parallel.
 data MulticountDFST sigma = MulticountDFST {-# UNPACK #-} !Int16 -- number of states
                                            {-# UNPACK #-} !Int16 -- initial state
                                            {-# UNPACK #-} !(sigma, sigma) -- segment bounds
@@ -368,6 +359,7 @@ foreign import ccall unsafe "transducePackedMulti"
         -> Ptr Int16 -> Ptr Int32
         -> Ptr Int64 -> IO ()
 
+-- | Fast transduction of 'Multicount'. For multiple words, returns the sum of all transductions.
 transducePackedMulti :: (Ix sigma) => MulticountDFST sigma -> PackedText sigma -> Multicount
 transducePackedMulti (MulticountDFST ns q0 cb dims tf tw fw) (PackedText cb' tvec fvec)
     | cb == cb' = MC . V.map fromIntegral . SV.convert . unsafePerformIO $
@@ -379,7 +371,7 @@ transducePackedMulti (MulticountDFST ns q0 cb dims tf tw fw) (PackedText cb' tve
     | otherwise = error "Mismatched chatacter bounds in packed text vs DFA"
 
 
-
+-- | Optimized DFST form calculating verctor expectations over the entire probability distribution defined by the DFA.
 data ExpVecDFST sigma = ExpVecDFST {-# UNPACK #-} !Int16 -- number of states
                                    {-# UNPACK #-} !Int16 -- initial state
                                    {-# UNPACK #-} !(sigma, sigma) -- segment bounds
@@ -430,6 +422,7 @@ foreign import ccall unsafe "weightExpVec"
         -> Ptr Double
         -> Ptr Double -> Ptr Double -> Ptr Double -> Ptr Double -> IO ()
 
+-- | Assign maxent weights to the counts in a Multicount to get expectations (which include probabilities).
 weightExpVec :: (Ix sigma) => MulticountDFST sigma -> Vec -> ExpVecDFST sigma
 weightExpVec (MulticountDFST ns q0 cbound dims tm tc fc) (Vec weights)
     | dims' == V.length weights = (ExpVecDFST ns q0 cbound dims tm tpm tvm fpm fvm)
@@ -456,6 +449,7 @@ foreign import ccall unsafe "expsByLengthVec"
         -> Ptr Int16 -> Ptr Double -> Ptr Double -> Ptr Double -> Ptr Double
         -> Ptr Double -> Ptr Double -> IO ()
 
+-- | Get the total expectations over each length of string up to a maximum
 expsByLengthVec :: (Ix sigma) => ExpVecDFST sigma -> Int -> Array Int (Expectation Vec)
 expsByLengthVec (ExpVecDFST ns q0 cbound dims tm tpm tvm fpm fvm) maxlen = unsafePerformIO $ do
     let nc = rangeSize cbound
@@ -472,6 +466,7 @@ expsByLengthVec (ExpVecDFST ns q0 cbound dims tm tpm tvm fpm fvm) maxlen = unsaf
         return $ Exp p (Vec (SV.convert v))
 
 
+-- | Optimized DFST form calculating scalar expectations over the entire probability distribution defined by the DFA.
 data ExpDoubleDFST sigma = ExpDoubleDFST {-# UNPACK #-} !Int16 -- number of states
                                          {-# UNPACK #-} !Int16 -- initial state
                                          {-# UNPACK #-} !(sigma, sigma) -- segment bounds
@@ -519,6 +514,7 @@ foreign import ccall unsafe "weightExpPartial"
         -> Ptr Double -> Ptr Double
         -> Ptr Double -> Ptr Double -> Ptr Double -> Ptr Double -> IO ()
 
+-- | Assign maxent weights to the counts in a Multicount to and apply a covector to the resulting expectations.
 weightExpPartial :: (Ix sigma) => MulticountDFST sigma -> Vec -> Vec -> ExpDoubleDFST sigma
 weightExpPartial (MulticountDFST ns q0 cbound dims tm tc fc) (Vec weights) (Vec dir)
     | dims' == V.length weights && dims' == V.length dir = (ExpDoubleDFST ns q0 cbound tm tpm tvm fpm fvm)
@@ -549,6 +545,7 @@ foreign import ccall unsafe "expsByLengthDouble"
         -> Ptr Int16 -> Ptr Double -> Ptr Double -> Ptr Double -> Ptr Double
         -> Ptr Double -> Ptr Double -> IO ()
 
+-- | Get the total expectations over each length of string up to a maximum
 expsByLengthDouble :: (Ix sigma) => ExpDoubleDFST sigma -> Int -> Array Int (Expectation Double)
 expsByLengthDouble (ExpDoubleDFST ns q0 cbound tm tpm tvm fpm fvm) maxlen = unsafePerformIO $ do
     let nc = rangeSize cbound
@@ -568,15 +565,19 @@ expsByLengthDouble (ExpDoubleDFST ns q0 cbound tm tpm tvm fpm fvm) maxlen = unsa
 --------------------------------------------------------------------------------
 
 
--- quantifiers for globs
+-- | Type for Glob quantifiers
 data GlobReps = GSingle | GPlus | GStar deriving (Enum, Eq, Ord, Read, Show)
 instance NFData GlobReps where
     rnf gr = gr `seq` ()
 
+-- | Fast reperesentation of a set of segments by its characteristic function over an enclosing rectangle of segments.
 type SegSet sigma = UArray sigma Bool
 
--- glob of segment lists, nore generalized version of ngrams allowing for repeated classes as well as single ones.
-data ListGlob sigma = ListGlob Bool Bool [(GlobReps, SegSet sigma)] deriving (Eq, Ord)
+-- | Glob of segment lists, nore generalized version of ngrams allowing for repeated classes as well as single ones. The two boolean parameters restrict the glob to match a prefixes or suffixes only.
+data ListGlob sigma = ListGlob Bool -- Is restricted to string start
+                               Bool -- Is restricted to string end
+                               [(GlobReps, SegSet sigma)] -- List of character sets and their quantifiers.
+                               deriving (Eq, Ord)
 
 instance (IArray UArray e, NFData i, Ix i) => NFData (UArray i e) where
     rnf a = let b = bounds a in (a ! fst b) `seq` rnf b
@@ -584,7 +585,7 @@ instance (IArray UArray e, NFData i, Ix i) => NFData (UArray i e) where
 instance (NFData sigma, Ix sigma) => NFData (ListGlob sigma) where
     rnf (ListGlob isinit isfin parts) = isinit `seq` isfin `seq` rnf parts
 
--- show in regex format
+-- | Globs are displayed in regex format
 instance Show (ListGlob Char) where
     show (ListGlob isinit isfin parts) = (guard isinit >> "^") ++ (showGP =<< parts) ++ (guard isfin >> "$")
         where showGP :: (GlobReps, SegSet Char) -> String
@@ -593,7 +594,7 @@ instance Show (ListGlob Char) where
                                                 GPlus -> "+"
                                                 GStar -> "*"
 
---
+-- | Create a DFST countign the violations of a ListGlob. Each 'SegSet' in the glob must have the same bounds and the glob must not be empty.
 matchCounter :: forall sigma . (Ix sigma) => ListGlob sigma -> ShortDFST sigma
 matchCounter (ListGlob isinit isfin gparts) = pruneAndPack $ DFST (followEpsilons 0) tm fw where
     cbound = bounds . snd . head $ gparts

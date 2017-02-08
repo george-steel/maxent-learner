@@ -2,14 +2,27 @@
 
 {-|
 Module: Linguistics.PhonotacticLearner.UniversalGrammar
-Description: Description of phonological features and generation of candidate constraint sets.
+Description: Description of phonological features and consrtraints.
 License: GPL-2+
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 Maintainer: george.steel@gmail.com
 
 -}
 
-module Linguistics.PhonotacticLearner.UniversalGrammar where
+module Linguistics.PhonotacticLearner.UniversalGrammar (
+    FeatureState(..), SegRef,
+
+    FeatureTable(..), srBounds, ftlook,
+    segsToRefs, refsToSegs,
+    csvToFeatureTable,
+
+    segmentFiero, joinFiero,
+
+    NaturalClass(..), classToSeglist,
+    ClassGlob(..), classesToLists,
+
+    cgMatchCounter
+) where
 
 import Linguistics.PhonotacticLearner.Util.Ring
 import Linguistics.PhonotacticLearner.Util.Probability
@@ -64,6 +77,8 @@ segsToRefs ft = mapMaybe (\x -> M.lookup x (segLookup ft))
 refsToSegs :: FeatureTable sigma -> [SegRef] -> [sigma]
 refsToSegs ft = fmap (segNames ft !) . filter (inRange (srBounds ft))
 
+allFeatures :: FeatureTable sigma -> [T.Text]
+allFeatures ft = elems (featNames ft)
 
 
 
@@ -102,9 +117,6 @@ csvToFeatureTable readSeg rawcsv = do
     return (FeatureTable ft featlist seglist featmap segmap)
 
 
-
-allFeatures :: FeatureTable sigma -> [T.Text]
-allFeatures ft = elems (featNames ft)
 
 
 segmentFiero :: [String] -> String -> [String]
@@ -212,9 +224,3 @@ classesToLists ft (ClassGlob isinit isfin gparts) = ListGlob isinit isfin (fmap 
 
 cgMatchCounter :: FeatureTable sigma -> ClassGlob -> ShortDFST SegRef
 cgMatchCounter ft = matchCounter . classesToLists ft
-
-
-ngrams  :: Int -> [a] -> [[a]]
-ngrams  0  _       = [[]]
-ngrams  _  []      = []
-ngrams  n  (x:xs)  = fmap (x:) (ngrams (n-1) xs) ++ ngrams n xs

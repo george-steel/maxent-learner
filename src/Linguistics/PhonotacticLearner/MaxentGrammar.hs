@@ -8,14 +8,22 @@
 
 {-|
 Module: Linguistics.PhonotacticLearner.MaxentGrammar.MaxentGrammar
-Description: Functions to model maxent grammars using DFSTs
+Description: Functions to model maxent grammars using DFSTs.
 License: GPL-2+
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 Maintainer: george.steel@gmail.com
 
+
 -}
 
-module Linguistics.PhonotacticLearner.MaxentGrammar where
+module Linguistics.PhonotacticLearner.MaxentGrammar (
+    Length, Lexicon(..), sortLexicon, lengthCdf, lengthPdf,
+
+    maxentProb,
+    lexLogProbTotalDeriv, lexLogProbPartialDeriv,
+
+    sampleWord, sampleWordSalad
+) where
 
 import Linguistics.PhonotacticLearner.Util.Ring
 import Linguistics.PhonotacticLearner.WeightedDFA
@@ -39,50 +47,21 @@ import qualified Data.Vector.Unboxed as V
 
 --------------------------------------------------------------------------------
 
--- aliases for various roles of transducer
-type SingleViolationCounter sigma = DFST Int sigma (Sum Int)
-type MaxentViolationCounter sigma = DFST Int sigma Multicount
-type MaxentProbTransducer sigma = DFST Int sigma Double
-type MaxentExpTransducer sigma = DFST Int sigma (Expectation Vec)
+-- | Apply weights to violation counts to get a relative probability.
+maxentProb :: Vec -> Multicount -> Double
+maxentProb !weights !counts = exp . negate $ innerProd weights (fromMC counts)
 
-
--- given maxent weights, turn count into their expectations
-weightMC :: Vec -> Multicount -> Expectation Vec
-weightMC weights counts = Exp p (p ⊙ fromMC counts)
-    where p = exp . negate $ innerProd weights (fromMC counts)
-
--- add weights to a counting transducer to get expectation transducer
-weightConstraints :: (Ix sigma) => MaxentViolationCounter sigma -> Vec -> MaxentExpTransducer sigma
-weightConstraints dfa ws = fmap (weightMC ws) dfa
-
--- drop expectation data to give probability-only transducer
-dropCounts :: (Ix sigma) => MaxentExpTransducer sigma -> MaxentProbTransducer sigma
-dropCounts = fmap prob
-
--- get list total maxent values by string length. corecursive.
--- each entry in the list gives the total probability of all strings fo length n
--- Hayes and Wilson refer to this quantity as Z
-maxentTotals :: (Ix sigma) => MaxentProbTransducer sigma -> [Double]
-maxentTotals dfa = fmap totalp (iterate (stepweights dfa) (initialWeightArray dfa))
-    where totalp arr = sum $ zipWith (*) (elems (finalWeights dfa)) (elems arr)
-
--- get expectation vector of gonstraints over the probability distribution defined by the transducer
--- returns a colist of vectors for each length of string
-expectedViolations :: (RingModule Double v, Ix sigma) => DFST Int sigma (Expectation v) -> [(Double, v)]
-expectedViolations dfa = fmap totalexp (iterate (stepweights dfa) (initialWeightArray dfa))
-    where totalexp arr = (prob &&& normalizeExp) . sumR $ zipWith (⊗) (elems (finalWeights dfa)) (elems arr)
-
-
+{-# INLINE maxentProb #-}
 
 type Length = Int
 
--- list of words with their frequenceis sorted by length
+-- | Returns the probability (as a logarithm) of a lexicon with aand associated length distribution.
 data Lexicon sigma = Lex { totalWords :: Int
                          , lengthFreqs :: Array Length Int
                          , wordFreqs :: [([sigma], Int)]
                          } deriving Show
 
--- convert jumbled list fo words and frequencies to sorted lexicon
+-- | Convert jumbled list of words and frequencies to sorted lexicon.
 sortLexicon :: (Ord sigma) => [([sigma],Int)] -> Lexicon sigma
 sortLexicon wfs = Lex twords alengths awf
     where
@@ -93,32 +72,33 @@ sortLexicon wfs = Lex twords alengths awf
         alengths = accumArray (+) 0 (0,maxlen) (M.assocs mlengths)
         twords = sum (M.elems mlengths)
 
+-- | Retrieve length distribution as a 'Cdf' for sampling.
 lengthCdf :: Lexicon sigma -> Cdf Length
 lengthCdf = massToCdf . assocs . fmap fromIntegral . lengthFreqs
 
+-- | Retrieve length distribution as a normalized probability mass function. Probabilities add up to 1.
 lengthPdf :: Lexicon sigma -> [(Length, Double)]
 lengthPdf wfs = assocs . fmap fracOfTotal . lengthFreqs $ wfs
     where fracOfTotal k = fromIntegral k / fromIntegral (totalWords wfs)
 
 
--- get log probability of lexicon given total violations (taken as a parameter for caching), a violation counter, and a set of weights.
-lexLogProb :: (Ix sigma) => Lexicon sigma -> Vec -> MaxentViolationCounter sigma -> Vec -> Double
-lexLogProb wfs oviols ctr weights = totalViolWeight + totalNormalizer + prior
-    where
-        --prior = innerProd weights weights / 2
-        prior = l1Vec weights
-        probdfa = dropCounts (weightConstraints ctr weights)
-        probs = maxentTotals probdfa
-        totalViolWeight = innerProd oviols weights
-        totalNormalizer = sum . fmap (\(l,n) -> n ⊙ log (probs !! l)) . assocs . lengthFreqs $ wfs
-
 priorDeriv :: Vec -> Vec -> Vec
 priorDeriv (Vec !weights) (Vec !dlp) = Vec $ V.zipWith (\w d -> if w < 0.01 then min (d+1) 0 else d+1) weights dlp
 {-# INLINE priorDeriv #-}
 
--- same as logProb, but also returns its derivative at the weight vector specified.
-lexLogProbTotalDeriv :: (Ix sigma) => Array Length Int -> Vec -> MulticountDFST sigma -> Vec -> (Double, Vec)
-lexLogProbTotalDeriv !lengths !oviols !ctr !weights = (totalViolWeight + totalNormalizer + prior, priorDeriv weights (oviols ⊖ expviols))
+-- | For a given set of consteraints (reperesented by a DFST counting violations),
+-- lexicon (reprersented as length distribution and total violation count, which should be precomputed),
+-- and weight vector, returns the absolute probability (as a negative logarithm) and its derivative with respect to the weight vector.
+--
+-- Minimize this to find the optimal weights.
+-- To prevent overfitting, this function includes an exponential (L₁) prior equivalent to each constraint being violated once for existing.
+-- This intentionally differs from Hayes and Wilson since their gaussian (L₂²) prior had a strong preference for as many simillar constraints as possible as opposed to a single constraint. The exponential prior was chosen since it is independent of splitting constraints into duplicates with the weight distributed between them.
+lexLogProbTotalDeriv :: (Ix sigma) => MulticountDFST sigma -- ^ DFST counting constraint violations
+                                   -> Array Length Int -- ^ Length distribution of lexicon
+                                   -> Vec -- ^ Observed violations in lexicon
+                                   -> Vec -- ^ Weights to give constraints
+                                   -> (Double, Vec) -- ^ Probability and its derivative w.r.t. the weights
+lexLogProbTotalDeriv !ctr !lengths !oviols !weights = (totalViolWeight + totalNormalizer + prior, priorDeriv weights (oviols ⊖ expviols))
     where
         --prior = innerProd weights weights / 2
         prior = l1Vec weights
@@ -129,11 +109,13 @@ lexLogProbTotalDeriv !lengths !oviols !ctr !weights = (totalViolWeight + totalNo
         totalNormalizer = sum . fmap (\(l,n) -> n ⊙ log (prob (exps ! l))) . assocs $ lengths
         expviols = sumR . fmap (\(l,n) -> n ⊙ normalizeExp (exps ! l)) . assocs $ lengths
 
-dotWeights :: Vec -> Expectation Vec-> Expectation Double
-dotWeights ws (Exp p es) = Exp p (innerProd es ws)
 
-lexLogProbPartialDeriv :: (Ix sigma) => Array Length Int -> Vec -> MulticountDFST sigma -> Vec -> Vec -> Double
-lexLogProbPartialDeriv lengths oviols ctr weights dir = innerProd (dl1Vec weights) dir + innerProd dir oviols - expviols
+-- | Compute partial derivative of lexicon probability. Much faster equivalent of
+--
+-- > lexLogProbPartialDeriv ctr lengths oviols weights dir = dir `innerProd` snd (lexLogProbTotalDeriv ctr lengths oviols weights)
+
+lexLogProbPartialDeriv :: (Ix sigma) => MulticountDFST sigma -> Array Length Int -> Vec -> Vec -> Vec -> Double
+lexLogProbPartialDeriv !ctr !lengths !oviols !weights !dir = innerProd (dl1Vec weights) dir + innerProd dir oviols - expviols
     where
         edfa = weightExpPartial ctr weights dir
         (_,maxlen) = bounds lengths
@@ -143,14 +125,35 @@ lexLogProbPartialDeriv lengths oviols ctr weights dir = innerProd (dl1Vec weight
 
 
 
+-- used for statistical calculations over an entire dfa with ring weights (e.g. probabilities)
+-- given an array mapping states to weights (e.g, a maxent distribution),
+-- gives a new distribution after transducing an additional character
+stepweights :: (Ix q, Ix sigma, Semiring k) => DFST q sigma k -> Array q k -> Array q k
+stepweights dfa@(DFST _ tm _) prev = accumArray (⊕) zero sbound (fmap pathweight (range (bounds tm)))
+    where
+        sbound = stateBounds dfa
+        pathweight (s,c) = let (ns,w) = tm!(s,c) in (ns, (prev!s) ⊗ w)
+
+-- gives an array from states to weights with 1 in the first position and 0 elsewhere
+initialWeightArray :: (Ix l, Ix sigma, Semiring w) => DFST l sigma w -> Array l w
+initialWeightArray dfa = fnArray (stateBounds dfa) (\x -> if x == initialState dfa then one else zero)
+
+-- converts to an NFA with all the arrows reversed
+reverseTM :: (Ix q, Ix sigma) => DFST q sigma k -> Array (q,sigma) [(q,k)]
+reverseTM (DFST _ arr _) = accumArray (flip (:)) [] (bounds arr) (fmap (\((s,c),(s',w)) -> ((s',c),(s,w))) (assocs arr))
 
 
--- returns a monadic action to sample random words from a probability transducer.
--- for efficiency, evaluate this once than sequence the action repeatedly as intermediate values will be memoized.
-sampleWord :: forall g sigma m . (RandomGen g, Ix sigma, MonadState g m) => MaxentProbTransducer sigma -> Int -> (Int -> m [sigma])
+-- | Returns a monadic action to sample random words from a probability transducer,
+-- which may be generated from a violation counter with @('fmap' ('maxentProb' weights) ctr)@).
+-- For efficiency, evaluate this once then sequence the action repeatedly as intermediate values will be memoized.
+
+sampleWord :: forall g sigma m . (RandomGen g, Ix sigma, MonadState g m)
+    => DFST Int sigma Double -- ^ Probability DFST
+    -> Length -- ^ Maximum length to greate generator fot
+    -> (Length -> m [sigma]) -- ^ Random generator taking length and returning action.
 sampleWord dfa maxn = backDists `seq` \n -> do
         fs <- sampleCdf (finalStates ! n)
-        rcs <- flip evalStateT fs . forM (reverse . range $ (1,n)) $ \k -> do
+        rcs <- flip evalStateT fs . forM (reverse . range $ (1, min n maxn)) $ \k -> do
             s <- get
             (c,s') <- lift . sampleCdf $ backDists!(k,s)
             put s'
@@ -180,8 +183,8 @@ sampleWord dfa maxn = backDists `seq` \n -> do
                     s <- range qbound
                     return (s, maxentArray!(n,s) * finalWeights dfa!s)
             return (n,cdf)
-
-sampleWordSalad :: (RandomGen g, Ix sigma, MonadState g m) => MaxentProbTransducer sigma -> Cdf Int -> Int -> m [[sigma]]
+-- | Like sampleWord but generates multiple words. Length distribution is specified as a 'Cdf' and number of words to generate.
+sampleWordSalad :: (RandomGen g, Ix sigma, MonadState g m) => DFST Int sigma Double -> Cdf Length -> Int -> m [[sigma]]
 sampleWordSalad dfa lengthdist samples = mapM sampler wordlenlist
     where
         wordlen = uniformSample lengthdist samples

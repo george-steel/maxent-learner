@@ -195,7 +195,7 @@ main = do
             evaluate . force $ grammar
             evaluate . force $ dfa
 
-            salad <- getStdRandom . runState $ sampleWordSalad (dropCounts (weightConstraints dfa weights)) lencdf (samplesize args)
+            salad <- getStdRandom . runState $ sampleWordSalad (fmap (maxentProb weights) dfa) lencdf (samplesize args)
 
             let output = unlines . fmap (unsegmenter . refsToSegs ft) $ salad
 

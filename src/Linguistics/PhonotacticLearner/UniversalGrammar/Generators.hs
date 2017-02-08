@@ -1,12 +1,22 @@
-{-------------------------------------------------------------------------------
+{-|
+Module: Linguistics.PhonotacticLearner.UniversalGrammar.Generators
+Description: Generation of candidate constraint sets.
+License: GPL-2+
+Copyright: © 2016-2017 George Steel and Peter Jurgec
+Maintainer: george.steel@gmail.com
 
-UNIVERSAL GRAMMAR FUNCTIONS
 
-Put these together to generate lists of candidate constraints for the learner
+-}
 
--------------------------------------------------------------------------------}
+module Linguistics.PhonotacticLearner.UniversalGrammar.Generators (
+    ngrams,
+    classesByGenerality,
+    ugSingleClasses, ugBigrams,
+    ugEdgeClasses, ugEdgeBigrams,
+    ugLimitedTrigrams, ugLongDistance,
 
-module Linguistics.PhonotacticLearner.UniversalGrammar.Generators where
+    ugHayesWilson,
+) where
 
 import Linguistics.PhonotacticLearner.UniversalGrammar
 import Linguistics.PhonotacticLearner.WeightedDFA
@@ -15,6 +25,12 @@ import Data.Array.IArray
 import qualified Data.Map as M
 import Control.Monad
 import Control.DeepSeq
+
+
+ngrams  :: Int -> [a] -> [[a]]
+ngrams  0  _       = [[]]
+ngrams  _  []      = []
+ngrams  n  (x:xs)  = fmap (x:) (ngrams (n-1) xs) ++ ngrams n xs
 
 -- Enumerate all classes (and their inverses to a certain number of features
 -- in inverse order of the humber of features the uninverted class contains.
@@ -100,13 +116,14 @@ ugLongDistance cls rcls = fmap snd . sortOn fst $ do
         lg = ListGlob False False [(GSingle,l1),(GPlus,l2),(GSingle,l3)]
     return (w, (g,lg))
 
-ugMiddleHayesWilson :: [(Int, NaturalClass,SegSet SegRef)] -> [(NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
+{-ugMiddleHayesWilson :: [(Int, NaturalClass,SegSet SegRef)] -> [(NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugMiddleHayesWilson cls rcls = join [ ugSingleClasses cls
                                     , ugBigrams cls
                                     , ugLimitedTrigrams cls rcls]
+-}
 
-ugEdgeHayesWilson :: [(Int, NaturalClass,SegSet SegRef)] -> [(NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
-ugEdgeHayesWilson cls rcls = join [ ugSingleClasses cls
+ugHayesWilson :: [(Int, NaturalClass,SegSet SegRef)] -> [(NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
+ugHayesWilson cls rcls = join [ ugSingleClasses cls
                                   , ugEdgeClasses cls
                                   , ugBigrams cls
                                   , ugEdgeBigrams cls

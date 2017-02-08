@@ -7,10 +7,11 @@ License: GPL-2+
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 Maintainer: george.steel@gmail.com
 
+Main entry point of
 -}
 
 module Linguistics.PhonotacticLearner(
-    generateGrammarIO
+    generateGrammarIO,
 ) where
 
 import Linguistics.PhonotacticLearner.Util.Ring
@@ -36,20 +37,21 @@ stopsigint e = case e of
         return ()
     _ -> throw e
 
-{- main entry point for constraint learning.
+{-|
+Infer a phonotactic grammar from a list of candidate constraints and a corpus of texts.
 
-This function makes no assumptions as to UG and instead, takes in a list of constraint candidates (in order of decreasing generality).
-These constraints take the form of a pair consisting of a label (only compared for equality to prevent duplication)
-and a DFA which counts the number of times a constraint is violated in a string.
+This algorithm by repeatedly taking the next constraint on the list of candidates which has an observed/expected number of violations under a threshold value, adding it to the current constraint set, and then reweigthing the constraint to refine the grammar. Multiple passes are made with an increasing sequence of threshold values.
 
-To generate a constraint candidate list, several UG functions are contained in the PhonotacticGrammar module
+Each constraint in the candidate is reperesemted as a pair consisting of a unique label and a DFST which counts the violations of that constraint. The corpus of words is reperesented as a 'Lexicon' which can be generated from a list of words by 'sortLexicon'. The grammar is output as a list of constraint labels, a merged DFST to count violations, and a 'Vec' of weights.
+
+To generate a constraint candidate list, several UG functions are contained in the 'UniversalGrammar' module
 -}
-generateGrammarIO :: forall g clabel sigma . (Show clabel, Ix sigma, NFData sigma, NFData clabel, Eq clabel) -- In the typical case, clabel = ClassGlob, sigma = SegRef
-    => Int -- Monte Carlo sample size
-    -> [Double] -- list of accuracy thresholds
-    -> [(clabel, ShortDFST sigma)] -- list of constraints to try in order. Each constraint has a label and a dfa to compute it
-    -> Lexicon sigma -- List of words to try and their frequencies
-    -> IO ([clabel], MulticountDFST sigma, Vec) -- computed grammar
+generateGrammarIO :: forall g clabel sigma . (Show clabel, Ix sigma, NFData sigma, NFData clabel, Eq clabel)
+    => Int -- ^ Monte Carlo sample size
+    -> [Double] -- ^ list of accuracy thresholds
+    -> [(clabel, ShortDFST sigma)] -- ^ List of candidate constraints. Labels must be unique. All DFSTs must share the same input bounds.
+    -> Lexicon sigma -- ^ corpus of sample words and their relative frequencies
+    -> IO ([clabel], MulticountDFST sigma, Vec) -- ^ computed grammar
 generateGrammarIO samplesize thresholds candidates wfs = do
     let cbound = psegBounds . snd . head $ candidates
         blankdfa = nildfa cbound
@@ -69,7 +71,7 @@ generateGrammarIO samplesize thresholds candidates wfs = do
     let genSalad :: IO (PackedText sigma)
         genSalad = do
             (_,dfa,weights) <- readIORef currentGrammar
-            salad' <- getStdRandom . runState $ sampleWordSalad (dropCounts . unpackDFA $ weightExpVec dfa weights) lendist samplesize
+            salad' <- getStdRandom . runState $ sampleWordSalad (fmap (maxentProb weights) (unpackDFA dfa)) lendist samplesize
             return . packMultiText cbound . wordFreqs . sortLexicon . fmap (\x -> (x,1)) $ salad'
 
     currentSalad <- newIORef undefined
