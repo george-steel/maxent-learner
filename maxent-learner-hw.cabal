@@ -20,9 +20,9 @@ library
   hs-source-dirs:      src
   exposed-modules:     Linguistics.PhonotacticLearner.Util.Ring
                      , Linguistics.PhonotacticLearner.Util.Probability
+                     , Linguistics.PhonotacticLearner.Util.ConjugateGradient
                      , Linguistics.PhonotacticLearner.WeightedDFA
                      , Linguistics.PhonotacticLearner.MaxentGrammar
-                     , Linguistics.PhonotacticLearner.WeightOptimizer
                      , Linguistics.PhonotacticLearner.UniversalGrammar
                      , Linguistics.PhonotacticLearner.UniversalGrammar.Generators
                      , Linguistics.PhonotacticLearner

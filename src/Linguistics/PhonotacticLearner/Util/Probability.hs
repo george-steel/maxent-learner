@@ -3,13 +3,13 @@
 {-|
 Module: Linguistics.PhonotacticLearner.Util.Probability
 Description: Data structures and functions for working with probabilities.
-License: GPL-2+
 Copyright: © 2016-2017 George Steel and Peter Jurgec
+License: GPL-2+
 Maintainer: george.steel@gmail.com
 
-Data structures and functions for counting
-
+Data structures and functions for counting and probability.
 -}
+
 module Linguistics.PhonotacticLearner.Util.Probability (
     -- * Counting
     Multicount (..),

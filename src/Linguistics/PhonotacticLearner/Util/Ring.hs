@@ -3,8 +3,8 @@
 {-|
 Module: Linguistics.PhonotacticLearner.Util.Ring
 Description: Classes for rings and modules and data type for ℝ*.
-License: GPL-2+
 Copyright: © 2016-2017 George Steel and Peter Jurgec
+License: GPL-2+
 Maintainer: george.steel@gmail.com
 
 This module provides a hierarchy of typeclasses to describe rings and their substructures without all of the additional structure found in 'Num' (which does not apply to most rings). 'Num' instances are automatically 'Ring' instances if no explicit instance is given, making 'Ring' a drop-in replacenent for 'Num' to make more generic functions.

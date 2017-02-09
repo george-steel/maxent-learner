@@ -9,11 +9,14 @@
 {-|
 Module: Linguistics.PhonotacticLearner.MaxentGrammar.MaxentGrammar
 Description: Functions to model maxent grammars using DFSTs.
-License: GPL-2+
 Copyright: © 2016-2017 George Steel and Peter Jurgec
+License: GPL-2+
 Maintainer: george.steel@gmail.com
 
+Library for using DFAs to represent maxent grammars. A mexent grammar consists of a set of constraints, each of which is given a weight, which define a probability diatribution over the set of strings of each given length.
+The relativve probability (maxent score) of each string is equal to the negative exponential of the the total weight of the violated constraints.  In this module, such a grammar is reperesented by a 'DFST' which can count violations and a 'Vec' of weights.
 
+This module is mainly concerned with calculating probabilities of samples of text and finding the optimal weights to maximize that probability. There are alsu functions to randomly generate text using the distribution implied by a mexent grammar.
 -}
 
 module Linguistics.PhonotacticLearner.MaxentGrammar (
@@ -21,6 +24,7 @@ module Linguistics.PhonotacticLearner.MaxentGrammar (
 
     maxentProb,
     lexLogProbTotalDeriv, lexLogProbPartialDeriv,
+    llpOptimizeWeights,
 
     sampleWord, sampleWordSalad
 ) where
@@ -28,6 +32,7 @@ module Linguistics.PhonotacticLearner.MaxentGrammar (
 import Linguistics.PhonotacticLearner.Util.Ring
 import Linguistics.PhonotacticLearner.WeightedDFA
 import Linguistics.PhonotacticLearner.Util.Probability
+import Linguistics.PhonotacticLearner.Util.ConjugateGradient
 
 import Data.Array.IArray
 import Data.Array.Unboxed
@@ -123,6 +128,28 @@ lexLogProbPartialDeriv !ctr !lengths !oviols !weights !dir = innerProd (dl1Vec w
         expviols = sumR . fmap (\(l,n) -> n ⊙ normalizeExp (exps ! l)) . assocs $ lengths
 
 
+
+zeroNeg :: Vec -> (Vec, Bool)
+zeroNeg (Vec v) = (Vec (V.map (\x -> if x < 0.01 then 0 else x) v), V.any (\x -> x /= 0 && x < -0.01) v)
+
+-- | Calculate weights to maximize probability of lexicon.
+--  Takes starting position of search which MUST have the correct dimensionality (do not use 'zero')
+llpOptimizeWeights :: (Ix sigma) => Array Length Int -- Length distribution
+                                 -> PackedText sigma -- Packed lexicon
+                                 -> MulticountDFST sigma -- Constraint violation counter
+                                 -> Vec -- initial guess at weights
+                                 -> Vec -- Weights
+llpOptimizeWeights lengths pwfs dfa initweights =
+    let oviols = fromMC (transducePackedMulti dfa pwfs)
+    in conjugateGradientSearch True
+                               (0.01, 0.005)
+                               zeroNeg
+                               (lexLogProbTotalDeriv dfa lengths oviols)
+                               (lexLogProbPartialDeriv dfa lengths oviols)
+                               initweights
+
+
+--------------------------------------------------------------------------------
 
 
 -- used for statistical calculations over an entire dfa with ring weights (e.g. probabilities)

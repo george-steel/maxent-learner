@@ -3,8 +3,8 @@
 {-|
 Module: Linguistics.PhonotacticLearner.WeightedDFA
 Description: Library for handling deterministic finite state transducers
-License: GPL-2+
 Copyright: © 2016-2017 George Steel and Peter Jurgec
+License: GPL-2+
 Maintainer: george.steel@gmail.com
 
 Implementations of deterministic finite state transducers containing both a polymorphic 'DFST'@' functor and a typeclass for fast specialized types (with several implementations provided). Input alphabets are assumed to be finite rectangles inside 'Ix' types. Trandsuction functions are provided for both 'Monoid' and 'Semiring' output types. DFSTs may be created directly, generated from globs, or from smaller DFSTs using the product construction.

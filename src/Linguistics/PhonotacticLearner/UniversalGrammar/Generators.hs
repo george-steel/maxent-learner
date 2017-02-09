@@ -1,8 +1,8 @@
 {-|
 Module: Linguistics.PhonotacticLearner.UniversalGrammar.Generators
 Description: Generation of candidate constraint sets.
-License: GPL-2+
 Copyright: © 2016-2017 George Steel and Peter Jurgec
+License: GPL-2+
 Maintainer: george.steel@gmail.com
 
 
@@ -26,15 +26,17 @@ import qualified Data.Map as M
 import Control.Monad
 import Control.DeepSeq
 
-
+-- | Given a number n and a sequence, returns all subsewuences of length n.
 ngrams  :: Int -> [a] -> [[a]]
 ngrams  0  _       = [[]]
 ngrams  _  []      = []
 ngrams  n  (x:xs)  = fmap (x:) (ngrams (n-1) xs) ++ ngrams n xs
 
--- Enumerate all classes (and their inverses to a certain number of features
--- in inverse order of the humber of features the uninverted class contains.
+-- | Enumerate all classes (and their inverses) to a certain number of features
+-- in descending order of the number of segments the uninverted class contains.
 -- Discards duplicates (having the same set of segments).
+--
+-- Each segment is returned as a tripple with the (negated for sorting) numbet of segments in the class, the class label, and the set of segments it contains.
 classesByGenerality :: FeatureTable sigma -> Int -> [(Int, NaturalClass, SegSet SegRef)]
 classesByGenerality ft maxfeats = force $ fmap (\((ns, cs), c) -> (ns,c,cs)) (M.assocs cls)
     where
@@ -48,7 +50,7 @@ classesByGenerality ft maxfeats = force $ fmap (\((ns, cs), c) -> (ns,c,cs)) (M.
             guard (ns /= 0)
             return ((negate ns, cs), c)
 
-
+-- Given a set of classes, return a set of globs matching those classes.
 ugSingleClasses :: [(Int, NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugSingleClasses cls = fmap snd . sortOn fst $ do
     (w,c,l) <- cls
@@ -57,6 +59,7 @@ ugSingleClasses cls = fmap snd . sortOn fst $ do
         lg = ListGlob False False [(GSingle,l)]
     return (w,(g,lg))
 
+-- Given a set of classes, return a set of globs matching those globs at word boundaries.
 ugEdgeClasses :: [(Int, NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugEdgeClasses cls = fmap snd . sortOn fst $ do
     (w,c,l) <- cls
@@ -66,6 +69,7 @@ ugEdgeClasses cls = fmap snd . sortOn fst $ do
         lg = ListGlob isinit isfin [(GSingle,l)]
     return (w,(g,lg))
 
+-- Given a set of classes, return a set pf globs matching class pairs, ordered by total weight.
 ugBigrams :: [(Int, NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugBigrams cls = fmap snd . sortOn fst $ do
     (w1,c1,l1) <- cls
@@ -75,6 +79,7 @@ ugBigrams cls = fmap snd . sortOn fst $ do
         lg = ListGlob False False [(GSingle,l1),(GSingle,l2)]
     return (w1+w2,(g,lg))
 
+-- Given a set of classes, return a set pf globs matching class pairs at word boundaries, ordered by total weight.
 ugEdgeBigrams :: [(Int, NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugEdgeBigrams cls = fmap snd . sortOn fst $ do
     (w1,c1,l1) <- cls
@@ -85,6 +90,7 @@ ugEdgeBigrams cls = fmap snd . sortOn fst $ do
         lg = ListGlob isinit isfin [(GSingle,l1),(GSingle,l2)]
     return (w1+w2,(g,lg))
 
+-- | Given a set of classes ansd a smaller subset, return s set of globs matching trigrams of classes from the set where at least one class is contained in ste subset.
 ugLimitedTrigrams :: [(Int, NaturalClass,SegSet SegRef)] -> [(NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugLimitedTrigrams cls rcls = fmap snd . sortOn fst $ do
     (w1,c1,l1) <- cls
@@ -106,6 +112,7 @@ ugLimitedTrigrams cls rcls = fmap snd . sortOn fst $ do
         lg = ListGlob False False [(GSingle,l1),(GSingle,l2),(GSingle,l3)]
     return (w, (g,lg))
 
+-- | Given two sets of classes, return globs matching a pair oc slasses in the first set separated by any number of occurrences of a class in the second set.
 ugLongDistance :: [(Int, NaturalClass,SegSet SegRef)] -> [(NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugLongDistance cls rcls = fmap snd . sortOn fst $ do
     (w1,c1,l1) <- cls
@@ -122,6 +129,7 @@ ugMiddleHayesWilson cls rcls = join [ ugSingleClasses cls
                                     , ugLimitedTrigrams cls rcls]
 -}
 
+-- | Combine the above functions (not including 'ugLongDistance') into the original candidate generator from the Hayes and Wilson paper.
 ugHayesWilson :: [(Int, NaturalClass,SegSet SegRef)] -> [(NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugHayesWilson cls rcls = join [ ugSingleClasses cls
                                   , ugEdgeClasses cls

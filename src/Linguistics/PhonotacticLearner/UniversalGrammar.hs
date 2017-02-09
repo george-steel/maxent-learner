@@ -3,21 +3,21 @@
 {-|
 Module: Linguistics.PhonotacticLearner.UniversalGrammar
 Description: Description of phonological features and consrtraints.
-License: GPL-2+
 Copyright: © 2016-2017 George Steel and Peter Jurgec
+License: GPL-2+
 Maintainer: george.steel@gmail.com
 
 -}
 
 module Linguistics.PhonotacticLearner.UniversalGrammar (
+    -- * Phonological Features
     FeatureState(..), SegRef,
 
     FeatureTable(..), srBounds, ftlook,
     segsToRefs, refsToSegs,
     csvToFeatureTable,
 
-    segmentFiero, joinFiero,
-
+    -- * Natural Classes
     NaturalClass(..), classToSeglist,
     ClassGlob(..), classesToLists,
 
@@ -46,37 +46,40 @@ import Text.ParserCombinators.ReadP
 import Text.Read(Read(..),lift,parens)
 
 
--- enumeration for feature states (can be +,-,0)
+-- | Enumeration for feature states (can be +,-,0)
 data FeatureState = FOff | FPlus | FMinus deriving (Enum, Eq, Ord, Read, Show)
 instance NFData FeatureState where
     rnf fs = fs `seq` ()
 
--- using integer indexes to a lookup table to represent segments
+-- | Indices for segment lookup table
 newtype SegRef = Seg Int deriving (Eq, Ord, Read, Show, Ix, NFData)
 
+-- | Type for phonological feature table. Segments and features are referred to by indices so this structure includes lookup tables for those.
 data FeatureTable sigma = FeatureTable { featTable :: Array (SegRef,Int) FeatureState
                                        , featNames :: Array Int T.Text
                                        , segNames :: Array SegRef sigma
                                        , featLookup :: M.Map T.Text Int
                                        , segLookup :: M.Map sigma SegRef } deriving (Show)
 
--- segment references
+-- | Bounds for segment references
 srBounds :: FeatureTable sigma -> (SegRef, SegRef)
 srBounds ft = bounds (segNames ft)
 {-# INLINE srBounds #-}
 
+-- | Shortcut for feature table array access
 ftlook :: FeatureTable sigma -> SegRef -> Int -> FeatureState
 ftlook ft sr fi = featTable ft ! (sr,fi)
 {-# INLINE ftlook #-}
 
--- convert a string of raw segments to a string of SrgRefs
+-- | Convert a string of raw segments to a string of 'SegRef's
 segsToRefs :: (Ord sigma) => FeatureTable sigma -> [sigma] -> [SegRef]
 segsToRefs ft = mapMaybe (\x -> M.lookup x (segLookup ft))
 
--- convert a string of SegRefs back to segments
+-- | Convert a string of 'SegRef's back to segments
 refsToSegs :: FeatureTable sigma -> [SegRef] -> [sigma]
 refsToSegs ft = fmap (segNames ft !) . filter (inRange (srBounds ft))
 
+-- | List of all features in table
 allFeatures :: FeatureTable sigma -> [T.Text]
 allFeatures ft = elems (featNames ft)
 
@@ -88,7 +91,19 @@ lstrip (' ':xs) = lstrip xs
 lstrip ('\t':xs) = lstrip xs
 lstrip xs = xs
 
--- read feature table stored as csv
+{- |
+Parse feature table from CSV.
+
+To use a feature table other than the default IPA one, you may define it in CSV format (RFC 4180). The segment names are defined by the first row (they may be any strings as long as they are all distinct, i.e. no duplicate names) and the feature names are defined by the first column (they are not hard-coded). Data cells should contain @+@, @-@, or @0@ for binary features and @+@ or @0@ for privative features (where we do not want a minus set that could form classes).
+
+As a simple example, consider the following CSV file, defining three segments (a, n, and t), and two features (vowel and nasal).
+
+>      ,a,n,t
+> vowel,+,-,-
+> nasal,0,+,-
+
+If a row contains a different number of cells (separated by commas) than the header line, is rejected as invalid and does not define a feature (and will not be dispayed in the formatted feature table). If the CSV which is entered has duplicate segment names, no segments, or no valid features, the entire table is rejected (indicated by a red border around the text area, green is normal) and the last valid table is used and displayed.
+-}
 csvToFeatureTable :: (Ord sigma) => (String -> sigma) -> String -> Maybe (FeatureTable sigma)
 csvToFeatureTable readSeg rawcsv = do
     Right parsedcsv <- return (parseCSV "" rawcsv)
@@ -117,39 +132,16 @@ csvToFeatureTable readSeg rawcsv = do
     return (FeatureTable ft featlist seglist featmap segmap)
 
 
-
-
-segmentFiero :: [String] -> String -> [String]
-segmentFiero [] = error "Empty segment list."
-segmentFiero allsegs = go msl where
-    msl = maximum . fmap length $ allsegs
-    go _ [] = []
-    go _ ('\'':xs) = go msl xs
-    go 0 (x:xs) = go msl xs
-    go len xs | seg `elem` allsegs = seg : go msl rest
-              | otherwise = go (len-1) xs
-        where (seg,rest) = splitAt len xs
-
-joinFiero :: [String] -> [String] -> String
-joinFiero allsegs = go where
-    msl = maximum . fmap length $ allsegs
-    go [] = []
-    go [x] = x
-    go (x:xs@(y:_)) = let z = x++y
-                      in  if any (\s -> isPrefixOf s z && not (isPrefixOf s x)) allsegs
-                          then x ++ ('\'' : go xs)
-                          else x ++ go xs
-
-
 --------------------------------------------------------------------------------
 
-
+-- | Representation of a natural class as a list of features and their states. Can ahso handle inverted classes.
 data NaturalClass = NClass { isInverted :: Bool
                            , featureList :: [(FeatureState, T.Text)]
                            } deriving (Eq, Ord)
 instance NFData NaturalClass where
     rnf c@(NClass b fs) = b `seq` rnf fs
 
+-- | Uses SPE format
 instance Show NaturalClass where
     show (NClass isNegated feats) = (if isNegated then "[¬ " else "[") ++ unwords (fmap showfeat feats) ++ "]"
         where showfeat (fs, fn) = (case fs of
@@ -181,6 +173,7 @@ xor :: Bool -> Bool -> Bool
 xor False p = p
 xor True p = not p
 
+-- | Convert a class to a 'SegSet'
 classToSeglist :: FeatureTable sigma -> NaturalClass -> SegSet SegRef
 classToSeglist ft (NClass isNegated cls) = force $ fnArray (srBounds ft) (\c -> isNegated `xor` and [ftlook ft c fi == fs | (fs,fi) <- icls])
     where icls = do
@@ -188,11 +181,12 @@ classToSeglist ft (NClass isNegated cls) = force $ fnArray (srBounds ft) (\c -> 
             Just fi <- return (M.lookup fn (featLookup ft))
             return (s,fi)
 
--- for globs using feature classes instead of segment lists
+-- | Globs using 'NaturalClass' instead of 'SegSet'
 data ClassGlob = ClassGlob Bool Bool [(GlobReps, NaturalClass)] deriving (Eq, Ord)
 instance NFData ClassGlob where
     rnf (ClassGlob isinit isfin gparts) = isinit `seq` isfin `seq` rnf gparts
 
+-- | Uses SPE format
 instance Show ClassGlob where
     show (ClassGlob isinit isfin parts) = (guard isinit >> "#") ++ (showGP =<< parts) ++ (guard isfin >> "#") where
         showGP (GStar, NClass False []) = "…"
@@ -219,8 +213,10 @@ classGlobP = do
 instance Read ClassGlob where
     readPrec = parens (lift (skipSpaces >> classGlobP))
 
+-- | Convert to a 'ListGlob'
 classesToLists :: FeatureTable sigma -> ClassGlob -> ListGlob SegRef
 classesToLists ft (ClassGlob isinit isfin gparts) = ListGlob isinit isfin (fmap (second (classToSeglist ft)) gparts)
 
+-- | Create a DFST which counts the matches of the glob.
 cgMatchCounter :: FeatureTable sigma -> ClassGlob -> ShortDFST SegRef
 cgMatchCounter ft = matchCounter . classesToLists ft
