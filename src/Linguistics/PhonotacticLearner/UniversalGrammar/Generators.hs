@@ -50,7 +50,7 @@ classesByGenerality ft maxfeats = force $ fmap (\((ns, cs), c) -> (ns,c,cs)) (M.
             guard (ns /= 0)
             return ((negate ns, cs), c)
 
--- Given a set of classes, return a set of globs matching those classes.
+-- | Given a set of classes, return a set of globs matching those classes.
 ugSingleClasses :: [(Int, NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugSingleClasses cls = fmap snd . sortOn fst $ do
     (w,c,l) <- cls
@@ -69,7 +69,7 @@ ugEdgeClasses cls = fmap snd . sortOn fst $ do
         lg = ListGlob isinit isfin [(GSingle,l)]
     return (w,(g,lg))
 
--- Given a set of classes, return a set pf globs matching class pairs, ordered by total weight.
+-- | Given a set of classes, return a set pf globs matching class pairs, ordered by total weight.
 ugBigrams :: [(Int, NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugBigrams cls = fmap snd . sortOn fst $ do
     (w1,c1,l1) <- cls
@@ -79,7 +79,7 @@ ugBigrams cls = fmap snd . sortOn fst $ do
         lg = ListGlob False False [(GSingle,l1),(GSingle,l2)]
     return (w1+w2,(g,lg))
 
--- Given a set of classes, return a set pf globs matching class pairs at word boundaries, ordered by total weight.
+-- | Given a set of classes, return a set pf globs matching class pairs at word boundaries, ordered by total weight.
 ugEdgeBigrams :: [(Int, NaturalClass,SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugEdgeBigrams cls = fmap snd . sortOn fst $ do
     (w1,c1,l1) <- cls
