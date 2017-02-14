@@ -16,9 +16,9 @@ GNU General Public License for more details.
 -}
 
 import Linguistics.PhonotacticLearner
-import Linguistics.PhonotacticLearner.UniversalGrammar
-import Linguistics.PhonotacticLearner.UniversalGrammar.Generators
-import Linguistics.PhonotacticLearner.WeightedDFA
+import Linguistics.PhonotacticLearner.PhonotacticConstraints
+import Linguistics.PhonotacticLearner.PhonotacticConstraints.Generators
+import Linguistics.PhonotacticLearner.DFST
 import Linguistics.PhonotacticLearner.Util.Ring
 import Linguistics.PhonotacticLearner.Util.Probability
 import Linguistics.PhonotacticLearner.MaxentGrammar
@@ -207,18 +207,3 @@ main = do
                 Nothing -> return ()
 
             return ()
-
-
-
-    {-let globs12 = if
-    evaluate $ force shonaClasses
-    putStrLn $ "Generating grammar using " ++ show (length shonaClasses) ++ " classes."
-    let shonaGlobs = ugEdgeHayesWilson shonaClasses shonaCoreClasses
-    evaluate $ force shonaGlobs
-    putStrLn $ "Generated " ++ show (length shonaGlobs) ++ " globs, computing DFAs in parallel."
-    let shonaCandidates = fmap (force . (id *** matchCounter)) shonaGlobs `using` (parListChunk 1000 rdeepseq)
-    --evaluate $ force shonaCandidates
-    --putStrLn $ "Computed UG."
-    (grammar, dfa, weights) <- generateGrammarIO 3000 [0.01, 0.1, 0.2, 0.3] shonaCandidates shonaLex
-    putStrLn "\n\n\n\n"
-    putStrLn $ prettyprintGrammar grammar weights-}

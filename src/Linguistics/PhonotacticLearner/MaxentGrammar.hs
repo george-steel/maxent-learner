@@ -14,9 +14,9 @@ License: GPL-2+
 Maintainer: george.steel@gmail.com
 
 Library for using DFAs to represent maxent grammars. A mexent grammar consists of a set of constraints, each of which is given a weight, which define a probability diatribution over the set of strings of each given length.
-The relativve probability (maxent score) of each string is equal to the negative exponential of the the total weight of the violated constraints.  In this module, such a grammar is reperesented by a 'DFST' which can count violations and a 'Vec' of weights.
+The relative probability (maxent score) of each string is equal to the negative exponential of the the total weight of the violated constraints.  In this module, such a grammar is reperesented by a 'DFST' which can count violations and a 'Vec' of weights.
 
-This module is mainly concerned with calculating probabilities of samples of text and finding the optimal weights to maximize that probability. There are alsu functions to randomly generate text using the distribution implied by a mexent grammar.
+This module is mainly concerned with calculating probabilities of samples of text and finding the optimal weights to maximize that probability. There are also functions to randomly generate text using the distribution implied by a mexent grammar.
 -}
 
 module Linguistics.PhonotacticLearner.MaxentGrammar (
@@ -30,7 +30,7 @@ module Linguistics.PhonotacticLearner.MaxentGrammar (
 ) where
 
 import Linguistics.PhonotacticLearner.Util.Ring
-import Linguistics.PhonotacticLearner.WeightedDFA
+import Linguistics.PhonotacticLearner.DFST
 import Linguistics.PhonotacticLearner.Util.Probability
 import Linguistics.PhonotacticLearner.Util.ConjugateGradient
 

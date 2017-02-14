@@ -1,15 +1,18 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, GeneralizedNewtypeDeriving, OverloadedStrings #-}
 
 {-|
-Module: Linguistics.PhonotacticLearner.UniversalGrammar
+Module: Linguistics.PhonotacticLearner.PhonotacticConstraints
 Description: Description of phonological features and consrtraints.
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
 Maintainer: george.steel@gmail.com
 
+Data structures and functions for working with phonological features and natural classes.
+
+Feature tables are designed work with strings reperesented as lists of 'SegRef' indices into their internal segment lists, enabling processing with fast array lookups even with non-contiguous sets of segments.
 -}
 
-module Linguistics.PhonotacticLearner.UniversalGrammar (
+module Linguistics.PhonotacticLearner.PhonotacticConstraints (
     -- * Phonological Features
     FeatureState(..), SegRef,
 
@@ -19,7 +22,7 @@ module Linguistics.PhonotacticLearner.UniversalGrammar (
 
     -- * Natural Classes
     NaturalClass(..), classToSeglist,
-    ClassGlob(..), classesToLists,
+    GlobReps(..), ClassGlob(..), classesToLists,
 
     cgMatchCounter
 ) where
@@ -27,7 +30,7 @@ module Linguistics.PhonotacticLearner.UniversalGrammar (
 import Linguistics.PhonotacticLearner.Util.Ring
 import Linguistics.PhonotacticLearner.Util.Probability
 import Linguistics.PhonotacticLearner.MaxentGrammar
-import Linguistics.PhonotacticLearner.WeightedDFA
+import Linguistics.PhonotacticLearner.DFST
 
 import Text.CSV
 import Data.Array.IArray

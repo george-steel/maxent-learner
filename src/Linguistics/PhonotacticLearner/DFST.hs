@@ -1,15 +1,13 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, FlexibleInstances, BangPatterns, FlexibleContexts, ForeignFunctionInterface, MultiParamTypeClasses, FunctionalDependencies #-}
 
 {-|
-Module: Linguistics.PhonotacticLearner.WeightedDFA
+Module: Linguistics.PhonotacticLearner.DFST
 Description: Library for handling deterministic finite state transducers
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
 Maintainer: george.steel@gmail.com
 
 Implementations of deterministic finite state transducers containing both a polymorphic 'DFST'@' functor and a typeclass for fast specialized types (with several implementations provided). Input alphabets are assumed to be finite rectangles inside 'Ix' types. Trandsuction functions are provided for both 'Monoid' and 'Semiring' output types. DFSTs may be created directly, generated from globs, or from smaller DFSTs using the product construction.
-
-* Fast, compact implementations for common output types (Sum Int, Multicount, Expectation Vec, Expectation Double) which can be packed from or unpacked into the polymorphic type.
 
 Optimized C functions for common output types (@'Sum' 'Int'@, 'Multicount', @'Expectation' 'Vec'@, @'Expectation' 'Double'@) are included which use the 'PackedDFA' typeclass to convert to and from the generic type.  The specialized types additionally support the following operations.
 
@@ -23,7 +21,7 @@ Optimized C functions for common output types (@'Sum' 'Int'@, 'Multicount', @'Ex
 
 -}
 
-module Linguistics.PhonotacticLearner.WeightedDFA (
+module Linguistics.PhonotacticLearner.DFST (
     fnArray, xbd,
 
     -- * Polymorphic DFSTs

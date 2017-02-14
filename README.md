@@ -18,7 +18,7 @@ The command line works as follows:
 | -t, --featuretable *CSVFILE* | Use the features and segment list from a feature table in CSV format (a table for IPA is used by default). |
 | -c, --charsegs             | Use characters as segments (default). |
 | -w, --wordsegs             | Separate segments by spaces. |
-| --fierrosegs              | Parse segments by repeatedly taking the longest possible match and use ' to break up unintended digraphs (used for Fierro orthography). |
+| --fierosegs              | Parse segments by repeatedly taking the longest possible match and use ' to break up unintended digraphs (used for Fiero orthography). |
 | -n, --samples *N*          | Number of samples to use for salad generation. |
 | -o, --output *OUTFILE*       | Record final output to OUTFILE as well as stdout. |
 
