@@ -42,23 +42,26 @@ stopsigint e = case e of
 {-|
 Infer a phonotactic grammar from a list of candidate constraints and a corpus of texts.
 
-This algorithm by repeatedly taking the next constraint on the list of candidates which has an observed/expected number of violations under a threshold value, adding it to the current constraint set, and then reweigthing the constraint to refine the grammar. Multiple passes are made with an increasing sequence of threshold values.
+This algorithm works by keeping a running grammar (starting with an empty one) and repeatedly taking the next constraint on the list of candidates which improves the grammar by a large enough margin. Constraints are selected for inclusion when they have an observed number of violations less then a threshold factor times the expected number of violations in the running grammar. After each constraint is added, the weights of the running grammar are optimized.  Multiple passes are made with an increasing sequence of thresholds.
 
-Each constraint in the candidate is reperesemted as a pair consisting of a unique label and a DFST which counts the violations of that constraint. The corpus of words is reperesented as a 'Lexicon' which can be generated from a list of words by 'sortLexicon'. The grammar is output as a list of constraint labels, a merged DFST to count violations, and a 'Vec' of weights.
+For maximum flexibility, constraints are reperesented as DFSTs which count the number of violations of the constraint in an input string. In order to have understandable output, each candadite DFST is paired with a unique label, with the final grammar output as a merged DFST, a list of selected labels, and a weight vector. If the constraints are generated from a list of globs, aplying @(id &&& 'matchCounter')@ to the list will produce suitable candidates.
 
-To generate a constraint candidate list, several UG functions are contained in the 'UniversalGrammar' module
+Since we need to process these words using DFSTs, the set of valid segments must form a continous 'Ix' range, such as @[\'a\'..\'z\']@. If the segments do not, please replace them with indices into a lookup table.
+
+Since the algorithm works by continuous refinement, this action will catch SIGINT and terminate early if the signal is received.
 -}
-generateGrammarIO :: forall g clabel sigma . (Show clabel, Ix sigma, NFData sigma, NFData clabel, Eq clabel)
+generateGrammarIO :: forall clabel sigma . (Show clabel, Ix sigma, NFData sigma, NFData clabel, Eq clabel)
     => Int -- ^ Monte Carlo sample size
-    -> [Double] -- ^ list of accuracy thresholds
+    -> [Double] -- ^ List of accuracy thresholds
     -> [(clabel, ShortDFST sigma)] -- ^ List of candidate constraints. Labels must be unique. All DFSTs must share the same input bounds.
-    -> Lexicon sigma -- ^ corpus of sample words and their relative frequencies
-    -> IO ([clabel], MulticountDFST sigma, Vec) -- ^ computed grammar
+    -> [([sigma],Int)] -- ^ Corpus of sample words and their relative frequencies
+    -> IO ([clabel], MulticountDFST sigma, Vec) -- ^ Computed grammar
 generateGrammarIO samplesize thresholds candidates wfs = do
-    let cbound = psegBounds . snd . head $ candidates
+    let lwfs = sortLexicon wfs
+        cbound = psegBounds . snd . head $ candidates
         blankdfa = nildfa cbound
-        lendist = lengthCdf wfs
-        pwfs = packMultiText cbound (wordFreqs wfs)
+        lendist = lengthCdf lwfs
+        pwfs = packMultiText cbound (wordFreqs lwfs)
 
     hashctr :: IORef Int <- newIORef 0
     let mark500 = do
@@ -88,7 +91,7 @@ generateGrammarIO samplesize thresholds candidates wfs = do
                 salad <- readIORef currentSalad
                 let o = fromIntegral $ transducePackedShort cdfa pwfs
                     o' = fromIntegral $ transducePackedShort cdfa salad
-                    e = o' * fromIntegral (totalWords wfs) / fromIntegral samplesize
+                    e = o' * fromIntegral (totalWords lwfs) / fromIntegral samplesize
                     score = upperConfidenceOE o e
 
                 when (score < accuracy && cl `notElem` grammar) $ do
@@ -98,7 +101,7 @@ generateGrammarIO samplesize thresholds candidates wfs = do
                         newdfa :: MulticountDFST sigma = pruneAndPack (rawIntersection consMC (unpackDFA cdfa) (unpackDFA dfa))
                     putStrLn $ "New grammar has " ++ show (length newgrammar) ++ " constraints and " ++ show (numStates newdfa) ++ " states."
                     let oldweights = consVec 0 weights
-                    newweights <- evaluate . force $ llpOptimizeWeights (lengthFreqs wfs) pwfs newdfa oldweights
+                    newweights <- evaluate . force $ llpOptimizeWeights (lengthFreqs lwfs) pwfs newdfa oldweights
                     hPutStrLn stderr ""
                     putStrLn $ "Recalculated weights: " ++ showFVec (Just 2) newweights
                     atomicWriteIORef currentGrammar . force $ (newgrammar, newdfa, newweights)
@@ -109,9 +112,9 @@ generateGrammarIO samplesize thresholds candidates wfs = do
 
 -- | Given a set of possible segments and a string, break a string into segments.
 -- Uses the rules in Fiero orthography (a phonetic writing system using ASCII characters) where the longest possible match is always taken and apostrophes are used as a digraph break.
-segmentFiero :: [String] -- All possible segments
-             -> String -- Raw text
-             -> [String] -- Segmented text
+segmentFiero :: [String] -- ^ All possible segments
+             -> String -- ^ Raw text
+             -> [String] -- ^ Segmented text
 segmentFiero [] = error "Empty segment list."
 segmentFiero allsegs = go msl where
     msl = maximum . fmap length $ allsegs
@@ -123,9 +126,9 @@ segmentFiero allsegs = go msl where
         where (seg,rest) = splitAt len xs
 
 -- | Joins segments together using Fiero rules. Inserts apostrophes where necerssary.
-joinFiero :: [String] -- All possible segments
-          -> [String] -- Segmented text
-          -> String -- Raw text
+joinFiero :: [String] -- ^ All possible segments
+          -> [String] -- ^ Segmented text
+          -> String -- ^ Raw text
 joinFiero allsegs = go where
     msl = maximum . fmap length $ allsegs
     go [] = []

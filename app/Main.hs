@@ -162,7 +162,7 @@ main = do
             putStrLn $ "Generated candidates with " ++ show (length cls) ++ " classes and " ++ show (length globs) ++ " globs, running DFA generation in parallel."
             let candidates = fmap (force . (id *** matchCounter)) globs `using` (parListChunk 1000 rdeepseq)
 
-            (grammar, dfa, weights) <- generateGrammarIO (samplesize args) thresh candidates wfs
+            (grammar, dfa, weights) <- generateGrammarIO (samplesize args) thresh candidates lexlist
 
             let output = "# Length Distribution:\n" ++ (show . assocs . lengthFreqs $ wfs) ++ "\n\n# Rules:\n" ++ prettyprintGrammar grammar weights
 
