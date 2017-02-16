@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, BangPatterns #-}
 
 {-|
-Module: Linguistics.PhonotacticLearner.Util.ConjugateGradient
+Module: Text.PhonotacticLearner.Util.ConjugateGradient
 Description: Line search and Conjugate Gradient Search.
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
@@ -10,7 +10,7 @@ Maintainer: george.steel@gmail.com
 Implementations of line search and conjugate gradient search for minimization. Line search uses Illinois False Position.
 -}
 
-module Linguistics.PhonotacticLearner.Util.ConjugateGradient (
+module Text.PhonotacticLearner.Util.ConjugateGradient (
     traceInline, regulaFalsiSearch, conjugateGradientSearch,
 
     -- llpOptimizeWeights
@@ -25,10 +25,10 @@ import System.IO
 import System.IO.Unsafe
 import Numeric
 import Data.Array.IArray
---import Linguistics.PhonotacticLearner.WeightedDFA
---import Linguistics.PhonotacticLearner.Util.Probability
-import Linguistics.PhonotacticLearner.Util.Ring
---import Linguistics.PhonotacticLearner.MaxentGrammar
+--import Text.PhonotacticLearner.WeightedDFA
+--import Text.PhonotacticLearner.Util.Probability
+import Text.PhonotacticLearner.Util.Ring
+--import Text.PhonotacticLearner.MaxentGrammar
 
 -- using conjugate gradient method ad described by Shewchuk in
 -- "An Introduction to the Conjugate Gradient Method Without the Agonizing Pain"

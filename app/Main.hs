@@ -15,13 +15,13 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 GNU General Public License for more details.
 -}
 
-import Linguistics.PhonotacticLearner
-import Linguistics.PhonotacticLearner.PhonotacticConstraints
-import Linguistics.PhonotacticLearner.PhonotacticConstraints.Generators
-import Linguistics.PhonotacticLearner.DFST
-import Linguistics.PhonotacticLearner.Util.Ring
-import Linguistics.PhonotacticLearner.Util.Probability
-import Linguistics.PhonotacticLearner.MaxentGrammar
+import Text.PhonotacticLearner
+import Text.PhonotacticLearner.PhonotacticConstraints
+import Text.PhonotacticLearner.PhonotacticConstraints.Generators
+import Text.PhonotacticLearner.DFST
+import Text.PhonotacticLearner.Util.Ring
+import Text.PhonotacticLearner.Util.Probability
+import Text.PhonotacticLearner.MaxentGrammar
 
 import Options.Applicative
 import Options.Applicative.Extra

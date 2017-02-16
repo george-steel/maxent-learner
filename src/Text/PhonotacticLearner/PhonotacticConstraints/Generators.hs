@@ -1,5 +1,5 @@
 {-|
-Module: Linguistics.PhonotacticLearner.PhonotacticConstraints.Generators
+Module: Text.PhonotacticLearner.PhonotacticConstraints.Generators
 Description: Generation of candidate constraint sets.
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
@@ -13,7 +13,7 @@ The 'classesByGenreraity' function enumerates the classes defined by a feature t
 
 -}
 
-module Linguistics.PhonotacticLearner.PhonotacticConstraints.Generators (
+module Text.PhonotacticLearner.PhonotacticConstraints.Generators (
     ngrams,
     classesByGenerality,
     ugSingleClasses, ugBigrams,
@@ -23,8 +23,8 @@ module Linguistics.PhonotacticLearner.PhonotacticConstraints.Generators (
     ugHayesWilson,
 ) where
 
-import Linguistics.PhonotacticLearner.PhonotacticConstraints
-import Linguistics.PhonotacticLearner.DFST
+import Text.PhonotacticLearner.PhonotacticConstraints
+import Text.PhonotacticLearner.DFST
 import Data.List
 import Data.Array.IArray
 import qualified Data.Map as M

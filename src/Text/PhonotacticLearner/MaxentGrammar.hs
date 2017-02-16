@@ -7,7 +7,7 @@
              BangPatterns #-}
 
 {-|
-Module: Linguistics.PhonotacticLearner.MaxentGrammar.MaxentGrammar
+Module: Text.PhonotacticLearner.MaxentGrammar.MaxentGrammar
 Description: Functions to model maxent grammars using DFSTs.
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
@@ -19,7 +19,7 @@ The relative probability (maxent score) of each string is equal to the negative 
 This module is mainly concerned with calculating probabilities of samples of text and finding the optimal weights to maximize that probability. There are also functions to randomly generate text using the distribution implied by a mexent grammar.
 -}
 
-module Linguistics.PhonotacticLearner.MaxentGrammar (
+module Text.PhonotacticLearner.MaxentGrammar (
     Length, Lexicon(..), sortLexicon, lengthCdf, lengthPdf,
 
     maxentProb,
@@ -29,10 +29,10 @@ module Linguistics.PhonotacticLearner.MaxentGrammar (
     sampleWord, sampleWordSalad
 ) where
 
-import Linguistics.PhonotacticLearner.Util.Ring
-import Linguistics.PhonotacticLearner.DFST
-import Linguistics.PhonotacticLearner.Util.Probability
-import Linguistics.PhonotacticLearner.Util.ConjugateGradient
+import Text.PhonotacticLearner.Util.Ring
+import Text.PhonotacticLearner.DFST
+import Text.PhonotacticLearner.Util.Probability
+import Text.PhonotacticLearner.Util.ConjugateGradient
 
 import Data.Array.IArray
 import Data.Array.Unboxed

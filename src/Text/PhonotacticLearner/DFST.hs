@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, FlexibleInstances, BangPatterns, FlexibleContexts, ForeignFunctionInterface, MultiParamTypeClasses, FunctionalDependencies #-}
 
 {-|
-Module: Linguistics.PhonotacticLearner.DFST
+Module: Text.PhonotacticLearner.DFST
 Description: Library for handling deterministic finite state transducers
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
@@ -21,7 +21,7 @@ Optimized C functions for common output types (@'Sum' 'Int'@, 'Multicount', @'Ex
 
 -}
 
-module Linguistics.PhonotacticLearner.DFST (
+module Text.PhonotacticLearner.DFST (
     fnArray, xbd,
 
     -- * Polymorphic DFSTs
@@ -62,8 +62,8 @@ import Data.Monoid
 import Data.Int
 import Control.Arrow ((&&&), first, second)
 
-import Linguistics.PhonotacticLearner.Util.Ring
-import Linguistics.PhonotacticLearner.Util.Probability
+import Text.PhonotacticLearner.Util.Ring
+import Text.PhonotacticLearner.Util.Probability
 
 -- | Create an array by caching a function over a rectangle. Depending on the array type used, this can be used to memoise or precompute.
 fnArray :: (Ix i, IArray a e) => (i,i) -> (i -> e) -> a i e

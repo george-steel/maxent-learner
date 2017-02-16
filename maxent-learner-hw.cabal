@@ -1,6 +1,6 @@
 name:                maxent-learner-hw
 version:             0.1.0
-synopsis:            Implementation of Hayes and Wilson's maxent learning algorithm for phonotactic grammars.
+synopsis:            Hayes and Wilson's maxent learning algorithm for phonotactic grammars.
 description:         Provides an implementation of Hayes and Wilson's machine learning algorithm for maxent phonotactic grammars, as both a command-line tool and a function library.  The learner takes in a lexicon and produces a list of weighted constraints penalizing certain sound sequemces in an attempt to produce a probability distribution of words which maximizes the probability of the lexicon. Once such a set of constraints is generated, it can be tested by using it to generate random pronounceable text.
                      .
                      This package is an implementation of the algorithm described in Hayes and Wilson's paper /A Maximum Entropy Model of Phonotactics and Phonotactic Learning/ (available at <http://www.linguistics.ucla.edu/people/hayes/Phonotactics/Index.htm>).
@@ -18,14 +18,14 @@ cabal-version:       >=1.10
 library
   cc-options: -Wall -std=c11
   hs-source-dirs:      src
-  exposed-modules:     Linguistics.PhonotacticLearner.Util.Ring
-                     , Linguistics.PhonotacticLearner.Util.Probability
-                     , Linguistics.PhonotacticLearner.Util.ConjugateGradient
-                     , Linguistics.PhonotacticLearner.DFST
-                     , Linguistics.PhonotacticLearner.MaxentGrammar
-                     , Linguistics.PhonotacticLearner.PhonotacticConstraints
-                     , Linguistics.PhonotacticLearner.PhonotacticConstraints.Generators
-                     , Linguistics.PhonotacticLearner
+  exposed-modules:     Text.PhonotacticLearner.Util.Ring
+                     , Text.PhonotacticLearner.Util.Probability
+                     , Text.PhonotacticLearner.Util.ConjugateGradient
+                     , Text.PhonotacticLearner.DFST
+                     , Text.PhonotacticLearner.MaxentGrammar
+                     , Text.PhonotacticLearner.PhonotacticConstraints
+                     , Text.PhonotacticLearner.PhonotacticConstraints.Generators
+                     , Text.PhonotacticLearner
   build-depends:       base >= 4.7 && < 5
                      , deepseq == 1.4.*
                      , vector >= 0.10

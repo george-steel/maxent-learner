@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleInstances, UndecidableInstances, GeneralizedNewtypeDeriving, MultiParamTypeClasses #-}
 
 {-|
-Module: Linguistics.PhonotacticLearner.Util.Ring
+Module: Text.PhonotacticLearner.Util.Ring
 Description: Classes for rings and modules and data type for ℝ*.
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
@@ -18,7 +18,7 @@ In order to not clash with Num or Arrow, this module uses the unicode circled op
 > <Multi_key> <r> <asterisk> : "⊗"
 > <Multi_key> <r> <minus> : "⊖"
 -}
-module Linguistics.PhonotacticLearner.Util.Ring (
+module Text.PhonotacticLearner.Util.Ring (
       -- * Rings
       Additive(..)
     , AdditiveGroup(..)

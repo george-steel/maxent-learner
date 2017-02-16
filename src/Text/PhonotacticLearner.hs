@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll #-}
 
 {-|
-Module: Linguistics.PhonotacticLearner
+Module: Text.PhonotacticLearner
 Description: Utility for automatically inferring a maxent grammar form a candidate constraint set and lexicon.
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
@@ -10,16 +10,16 @@ Maintainer: george.steel@gmail.com
 Main learning algorithm for inferring granmmar from constraint set and lexicon. To set up the parameters, you will need to use 'sortLexicon' to prepare the text input some way of generating a set of constraint candidates (reperssented as 'DFST's). The PhonotacticConstraints module and its Generators submodule will be useful here.
 -}
 
-module Linguistics.PhonotacticLearner(
+module Text.PhonotacticLearner(
     generateGrammarIO,
 
     segmentFiero, joinFiero,
 ) where
 
-import Linguistics.PhonotacticLearner.Util.Ring
-import Linguistics.PhonotacticLearner.Util.Probability
-import Linguistics.PhonotacticLearner.DFST
-import Linguistics.PhonotacticLearner.MaxentGrammar
+import Text.PhonotacticLearner.Util.Ring
+import Text.PhonotacticLearner.Util.Probability
+import Text.PhonotacticLearner.DFST
+import Text.PhonotacticLearner.MaxentGrammar
 
 import System.Random
 import Control.Monad.State

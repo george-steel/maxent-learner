@@ -1,7 +1,7 @@
 {-# LANGUAGE ScopedTypeVariables, ExplicitForAll, MultiParamTypeClasses, FlexibleInstances, FlexibleContexts, UndecidableInstances, GeneralizedNewtypeDeriving #-}
 
 {-|
-Module: Linguistics.PhonotacticLearner.Util.Probability
+Module: Text.PhonotacticLearner.Util.Probability
 Description: Data structures and functions for counting and probability.
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
@@ -10,7 +10,7 @@ Maintainer: george.steel@gmail.com
 Data structures and functions for counting and probability.
 -}
 
-module Linguistics.PhonotacticLearner.Util.Probability (
+module Text.PhonotacticLearner.Util.Probability (
     -- * Counting
     Multicount (..),
     getCounts, consMC, singleMC, fromMC,
@@ -22,7 +22,7 @@ module Linguistics.PhonotacticLearner.Util.Probability (
     upperConfidenceOE
 ) where
 
-import Linguistics.PhonotacticLearner.Util.Ring
+import Text.PhonotacticLearner.Util.Ring
 --import Data.List
 import Data.Tuple
 import Data.Monoid
