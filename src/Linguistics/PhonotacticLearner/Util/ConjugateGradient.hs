@@ -7,7 +7,7 @@ Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
 Maintainer: george.steel@gmail.com
 
-Implementations of line search and conjugate gradient search for minimization.
+Implementations of line search and conjugate gradient search for minimization. Line search uses Illinois False Position.
 -}
 
 module Linguistics.PhonotacticLearner.Util.ConjugateGradient (

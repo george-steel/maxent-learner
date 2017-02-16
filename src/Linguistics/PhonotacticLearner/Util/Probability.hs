@@ -2,7 +2,7 @@
 
 {-|
 Module: Linguistics.PhonotacticLearner.Util.Probability
-Description: Data structures and functions for working with probabilities.
+Description: Data structures and functions for counting and probability.
 Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
 Maintainer: george.steel@gmail.com
