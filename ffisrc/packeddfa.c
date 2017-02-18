@@ -165,7 +165,7 @@ void weightExpPartial(const int16_t ns, const int16_t nc, const int16_t dims,
 
 
 
-inline void expVecTimesPlusAccum(int dim, double p1, const double* restrict v1, double p2, const double* restrict v2,
+static inline void expVecTimesPlusAccum(int dim, double p1, const double* restrict v1, double p2, const double* restrict v2,
     double* restrict pacc, double* restrict vacc){
     *pacc += p1 * p2;
     for (int i = 0; i < dim; ++i){
