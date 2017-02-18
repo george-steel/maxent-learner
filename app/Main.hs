@@ -30,6 +30,7 @@ import Control.Monad.State
 import Control.Applicative
 import qualified Data.Text as T
 import qualified Data.Map.Lazy as M
+import Data.Monoid
 import Data.Array.IArray
 import Data.Maybe
 import Data.FileEmbed
