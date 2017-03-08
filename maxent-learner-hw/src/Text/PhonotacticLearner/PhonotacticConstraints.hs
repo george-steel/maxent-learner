@@ -14,7 +14,7 @@ Feature tables are designed work with strings reperesented as lists of 'SegRef' 
 
 module Text.PhonotacticLearner.PhonotacticConstraints (
     -- * Phonological Features
-    FeatureState(..), SegRef,
+    FeatureState(..), SegRef(..),
 
     FeatureTable(..), srBounds, ftlook,
     segsToRefs, refsToSegs,
@@ -32,7 +32,7 @@ import Text.PhonotacticLearner.Util.Probability
 import Text.PhonotacticLearner.MaxentGrammar
 import Text.PhonotacticLearner.DFST
 
-import Text.CSV
+import Text.Read.CSV
 import Data.Array.IArray
 import Data.Maybe
 import Data.Tuple
@@ -46,7 +46,7 @@ import Control.Arrow((***),(&&&),first,second)
 import qualified Data.Text as T
 import qualified Data.Map.Lazy as M
 import Text.ParserCombinators.ReadP
-import Text.Read(Read(..),lift,parens)
+import Text.Read(Read(..),lift,parens,readMaybe)
 
 
 -- | Enumeration for feature states (can be +,-,0)
@@ -74,7 +74,7 @@ ftlook :: FeatureTable sigma -> SegRef -> Int -> FeatureState
 ftlook ft sr fi = featTable ft ! (sr,fi)
 {-# INLINE ftlook #-}
 
--- | Convert a string of raw segments to a string of 'SegRef's
+-- | Convert a string of raw segments to a string of 'SegRef's. Skips unrecognisable segments.
 segsToRefs :: (Ord sigma) => FeatureTable sigma -> [sigma] -> [SegRef]
 segsToRefs ft = mapMaybe (\x -> M.lookup x (segLookup ft))
 
@@ -109,7 +109,7 @@ If a row contains a different number of cells (separated by commas) than the hea
 -}
 csvToFeatureTable :: (Ord sigma) => (String -> sigma) -> String -> Maybe (FeatureTable sigma)
 csvToFeatureTable readSeg rawcsv = do
-    Right parsedcsv <- return (parseCSV "" rawcsv)
+    parsedcsv <- readCSV rawcsv
     ((_:segcells) : rawfeatrecs) <- return (fmap (fmap lstrip) parsedcsv)
     let numsegs  = length segcells
     guard (numsegs > 0)
@@ -133,6 +133,20 @@ csvToFeatureTable readSeg rawcsv = do
         featmap  = M.fromList (fmap swap (assocs featlist))
     guard (M.size segmap == rangeSize (bounds seglist))
     return (FeatureTable ft featlist seglist featmap segmap)
+
+-- | Parse a list of strings (one per line) into a list of SegRef strings and frequencies.
+-- Takes a feature table and a function to divide strings into segments (for single character segments, @fmap return@ may be used).
+-- Lines in the list may be optionally followed by a tab and an integer indicating their frequendy (instead of suplicating lines).play table
+
+readSrLexicon :: FeatureTable String -> (String -> [String]) -> String -> [([SegRef],Int)]
+readSrLexicon ft seg text = do
+    line <- lines text
+    let (wt@(_:_),wf') = break (== '\t') line
+    n <- case (words wf') of
+            [] -> [1]
+            [wf] -> maybeToList $ readMaybe wf
+            _ -> []
+    return (segsToRefs ft (seg wt), n)
 
 
 --------------------------------------------------------------------------------

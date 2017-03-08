@@ -80,11 +80,13 @@ data Expectation v = Exp {
 instance (RingModule Double v) => Additive (Expectation v) where
     zero = Exp 0 zero
     (Exp p1 v1) ⊕ (Exp p2 v2) = Exp (p1 + p2) (v1 ⊕ v2)
+    {-# INLINE (⊕) #-}
 
 -- intersect independent events or combine event with conditional probability
 instance (RingModule Double v) => Semiring (Expectation v) where
     one = Exp 1 zero
     (Exp p1 v1) ⊗ (Exp p2 v2) = Exp (p1 * p2) ((p1 ⊙ v2) ⊕ (p2 ⊙ v1))
+    {-# INLINE (⊗) #-}
 
 -- | Get the expectation conditional on the event actually occurring.
 normalizeExp :: (RingModule Double v) => Expectation v -> v

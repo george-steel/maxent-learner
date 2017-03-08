@@ -34,7 +34,7 @@ library
                      , random == 1.1
                      , array >= 0.3 && < 0.6
                      , text == 1.2.*
-                     , csv == 0.1.*
+                     , readcsv
   default-language:    Haskell2010
   c-sources:           ffisrc/packeddfa.c
 

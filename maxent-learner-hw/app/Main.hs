@@ -49,7 +49,6 @@ data SegmentType = Chars | Words | Fiero deriving (Enum, Eq, Ord, Read, Show)
 data Command = Learn {
         lexicon :: FilePath,
         thresholds :: [Double],
-        hasFreqs :: Bool,
         useEdges :: Bool,
         useTrigrams :: Maybe String,
         useBroken :: Maybe String }
@@ -71,7 +70,6 @@ parseOpts = ParsedArgs <$>
     hsubparser (command "learn" (info (Learn
             <$> strArgument (metavar "LEXICON")
             <*> option auto (long "thresholds" <> metavar "THRESHOLDS" <> value [0.01, 0.1, 0.2, 0.3] <> help "thresholds to use for candidate selection (default is [0.01, 0.1, 0.2, 0.3]).")
-            <*> switch (long "freqs" <> short 'f' <> help "Lexicon file contains word frequencies.")
             <*> switch (long "edges" <> short 'e' <> help "Allow constraints involving word boundaries.")
             <*> optional (strOption $ long "trigrams" <> short '3' <> metavar "COREFEATURES" <>
                 help "Allow trigram constraints where at least one class uses a single one of the following features (comma-separated).")
@@ -84,7 +82,7 @@ parseOpts = ParsedArgs <$>
         help "Use the features and segment list from a feature table in CSV format (a table for IPA is used by default).")
     <*> (flag' Chars (long "charsegs" <> short 'c' <> help "Use characters as segments (default).")
         <|> flag' Words (long "wordsegs" <> short 'w' <> help "Separate segments by spaces.")
-        <|> flag' Fiero (long "fierosegs" <> help "Parse segments by repeatedly taking the longest possible match and use ' to break up unintended digraphs (used for Fiero orthography).")
+        <|> flag' Fiero (long "fierosegs" <> short 'f' <> help "Parse segments by repeatedly taking the longest possible match and use ' to break up unintended digraphs (used for Fiero orthography).")
         <|> pure Chars)
     <*> option auto (long "samples" <> short 'n' <> value 3000 <> help "Number of samples to use for salad generation.")
     <*> optional (strOption $ long "output" <> short 'o' <> metavar "OUTFILE" <> help "Record final output to OUTFILE as well as stdout.")
@@ -97,18 +95,16 @@ opts = info (helper <*> parseOpts) (fullDesc <> progDesc "Automatically infer ph
 ipaft :: FeatureTable String
 ipaft = fromJust (csvToFeatureTable id $(embedStringFile "./app/ft-ipa.csv"))
 
-freqreader :: FeatureTable String -> (String -> [String]) -> String -> [([SegRef],Int)]
-freqreader ft seg text = do
+readlex :: FeatureTable String -> (String -> [String]) -> String -> [([SegRef],Int)]
+readlex ft seg text = do
     line <- lines text
     let (wt@(_:_),wf') = break (== '\t') line
-    [wf] <- return (words wf')
-    Just n <- return $ readMaybe wf
+    n <- case (words wf') of
+            [] -> [1]
+            [wf] -> maybeToList $ readMaybe wf
+            _ -> []
     return (segsToRefs ft (seg wt), n)
 
-nofreqreader :: FeatureTable String -> (String -> [String]) -> String -> [([SegRef],Int)]
-nofreqreader ft seg text = do
-    line <- lines text
-    return (segsToRefs ft (seg line), 1)
 
 prettyprintGrammar :: (Show clabel) => [clabel] -> Vec -> String
 prettyprintGrammar grammar weights = (unlines . reverse) [showFFloat (Just 2) w "  " ++ show c | c <- grammar | w <- coords weights]
@@ -140,14 +136,14 @@ main = do
             return ipaft
 
     case cmd args of
-        Learn lexfile thresh lfreqs gedges gtris gbroken -> do
+        Learn lexfile thresh gedges gtris gbroken -> do
             let segmenter = case segtype args of
                     Words -> words
                     Chars -> fmap return
                     Fiero -> segmentFiero (elems (segNames ft))
                 cls = force $ classesByGenerality ft 3
             lexdata <- readFile lexfile
-            let lexlist = (if lfreqs then freqreader else nofreqreader) ft segmenter lexdata
+            let lexlist = readlex ft segmenter lexdata
             when (null lexlist) (die "Invalid lexicon file")
             let wfs = sortLexicon lexlist
                 singles = ugSingleClasses cls

@@ -236,6 +236,7 @@ nildfa (a,z) = DFST 1 tm fm
         tm = fnArray ((1,a),(1,z)) (const (1,mempty))
         fm = fnArray (1,1) (const mempty)
 
+
 -- | Transduce a string of segments where and output the product of the weights (as a Monoid).
 transduceM :: (Ix q, Ix sigma, Monoid k) => DFST q sigma k -> [sigma] -> k
 transduceM (DFST q0 tm fw) cs = mconcat ws <> (fw ! fq)
@@ -246,6 +247,8 @@ transduceR :: (Ix q, Ix sigma, Semiring k) => DFST q sigma k -> [sigma] -> k
 transduceR (DFST q0 tm fw) cs = productR ws ⊗ (fw ! fq)
     where (fq, ws) = mapAccumL (curry (tm!)) q0 cs
 
+{-# INLINABLE transduceM #-}
+{-# INLINABLE transduceR #-}
 
 
 ------------------------------------------------------------------------------

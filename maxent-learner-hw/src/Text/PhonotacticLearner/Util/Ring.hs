@@ -49,6 +49,7 @@ class (Additive g) => AdditiveGroup g where
     addinv :: g -> g -- ^ Additive inverse, more general version of 'negate'
     (⊖) :: g -> g -> g -- ^ Subtraction
     x ⊖ y = x ⊕ addinv y
+    {-# INLINE (⊖) #-}
 
 -- | Semirings with addition and multiplication (but not subtraction).
 class (Additive r) => Semiring r where
@@ -91,12 +92,16 @@ instance Semiring Bool where
 instance {-# OVERLAPPABLE #-} (Num r) => Additive r where
     zero = 0
     (⊕) = (+)
+    {-# INLINE (⊕) #-}
 instance {-# OVERLAPPABLE #-} (Num r) => Semiring r where
     one = 1
     (⊗) = (*)
+    {-# INLINE (⊗) #-}
 instance {-# OVERLAPPABLE #-} (Num r) => AdditiveGroup r where
     addinv = negate
+    {-# INLINE addinv #-}
     (⊖) = (-)
+    {-# INLINE (⊖) #-}
 instance {-# OVERLAPPABLE #-} (Num r) => Ring r
 
 
@@ -147,6 +152,7 @@ productR xs = let (RProd x) = foldMap RProd xs in x
 -- | Since ℝ is a module over ℤ, using scalar multiplication can save a lot of coersion noise.
 instance RingModule Int Double where
     x ⊙ y = fromIntegral x * y
+    {-# INLINE (⊙) #-}
 
 -- | Implements variable-length vectors. Addition batween vectors of different lengths occurs by letting ℝ⊆ℝ²⊆ℝ³⊆… by embedding each length in the space op polynomials.
 newtype Vec = Vec {unVec :: V.Vector Double} deriving (Eq, Read, Show, NFData)
@@ -176,11 +182,14 @@ instance Additive Vec where
 
 instance AdditiveGroup Vec where
     addinv (Vec xs) = Vec (V.map negate xs)
+    {-# INLINE addinv #-}
 
 instance RingModule Double Vec where
     a ⊙ (Vec xs) = Vec (V.map (a *) xs)
+    {-# INLINE (⊙) #-}
 instance RingModule Int Vec where
     a ⊙ (Vec xs) = Vec (V.map (fromIntegral a *) xs)
+    {-# INLINE (⊙) #-}
 
 -- | Standard inner product on ℝⁿ.
 innerProd :: Vec -> Vec -> Double
