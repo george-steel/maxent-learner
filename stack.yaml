@@ -42,7 +42,7 @@ packages:
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
 extra-deps:
-  - readcsv-0.1
+  - readcsv-0.1.1
   - frpnow-0.18
 
 # Override default flag values for local packages and extra-deps

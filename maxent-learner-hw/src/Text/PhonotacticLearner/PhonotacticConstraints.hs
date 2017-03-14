@@ -62,7 +62,10 @@ data FeatureTable sigma = FeatureTable { featTable :: Array (SegRef,Int) Feature
                                        , featNames :: Array Int T.Text
                                        , segNames :: Array SegRef sigma
                                        , featLookup :: M.Map T.Text Int
-                                       , segLookup :: M.Map sigma SegRef } deriving (Show)
+                                       , segLookup :: M.Map sigma SegRef } deriving (Show, Eq)
+
+instance (Ord a, NFData a) => NFData (FeatureTable a) where
+    rnf (FeatureTable ft fn sn fl sl) = rnf ft `seq` rnf fn `seq` rnf sn `seq` rnf fl `seq` rnf sl
 
 -- | Bounds for segment references
 srBounds :: FeatureTable sigma -> (SegRef, SegRef)

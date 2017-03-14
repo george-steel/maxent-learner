@@ -18,6 +18,7 @@ import Data.Array.IArray
 import Data.FileEmbed
 import Text.RawString.QQ
 import Data.Maybe
+import FeatureTableEditor
 
 ipaft :: FeatureTable String
 ipaft = fromJust (csvToFeatureTable id $(embedStringFile "./app/ft-ipa.csv"))
@@ -38,6 +39,7 @@ css = [r|
 #featuretable .segheader {font-weight: bold;}
 #featuretable .featheader {font-weight: bold;}
 #featuretable .featzero {color: mix(@theme_fg_color, transparent, 0.35);}
+
 |]
 
 jt :: T.Text -> Maybe T.Text
@@ -53,21 +55,23 @@ main = runNowGTK $ mdo
     -- example gtk app
     -- initialization code
     window <- sync $ windowNew
-
-    fmat <- sync $ displayFeatureMatrix ipaft
+    (editor,dynft) <- createEditableFT ipaft
+    fmat <- displayDynFeatureTable dynft
     sync $ do
         sp <- cssProviderNew
         cssProviderLoadFromString sp css
         thescreen <- widgetGetScreen window
         styleContextAddProviderForScreen thescreen sp 600
-        scr <- scrolledWindowNew Nothing Nothing
         fr <- frameNew
         set fr [frameShadowType := ShadowIn ]
         --set scr [widgetName := Just "ftcontainer"]
-        containerAdd window fr
-        containerAdd fr scr
-        --set scr [ containerBorderWidth := 10 ]
-        containerAdd scr fmat
+        vb <- vBoxNew False 0
+        boxPackStart vb editor PackGrow 0
+        boxPackStart vb fr PackGrow 0
+        containerAdd window vb
+        containerAdd fr fmat
+
+    traceChanges "FT " dynft
 
     sync $ window `on` deleteEvent $ liftIO mainQuit >> return False
 
@@ -101,3 +105,28 @@ displayFeatureMatrix ft = do
         widgetAddClasses l oddclass
         gridAttach g l s f 1 1
     return g
+
+displayDynFeatureTable :: Behavior (FeatureTable String) -> Now ScrolledWindow
+displayDynFeatureTable dynft = do
+    initft <- sample dynft
+    let ftchanged = toChanges dynft
+    scr <- sync $ scrolledWindowNew Nothing Nothing
+    initwidget <- sync $ displayFeatureMatrix initft
+    sync $ scrolledWindowAddWithViewport scr initwidget
+    Just vp' <- sync $ binGetChild scr
+    let vp = castToViewport vp'
+    flip callIOStream ftchanged $ \newft -> do
+        Just oldw <- binGetChild vp
+        widgetDestroy oldw
+        newwidget <- displayFeatureMatrix newft
+        containerAdd vp newwidget
+        widgetShowAll newwidget
+    return scr
+
+
+createFileChooserButton :: String -> Now (FileChooserButton, Behavior (Maybe FilePath))
+createFileChooserButton title = do
+    fsb <- sync $ fileChooserButtonNew title FileChooserActionOpen
+    fsev <- getSignal fileChooserButtonFileSet fsb (fileChooserGetFilename fsb >>=)
+    selfile <- sample $ fromChanges Nothing fsev
+    return (fsb,selfile)
