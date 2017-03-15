@@ -112,8 +112,8 @@ loadFTfromFile fp = handle nothingOnIOError $ do
     bincsv <- B.readFile fp
     evaluate $ force . csvToFeatureTable id . T.unpack =<< either (const Nothing) Just (T.decodeUtf8' bincsv)
 
-createEditableFT :: FeatureTable String -> Now (VBox, Behavior (FeatureTable String))
-createEditableFT initft = do
+createEditableFT :: Maybe Window -> FeatureTable String -> Now (VBox, Behavior (FeatureTable String))
+createEditableFT transwin initft = do
     vb <- sync $ vBoxNew False 0
     editor <- sync $ treeViewNew
     sync $ do
@@ -126,20 +126,63 @@ createEditableFT initft = do
     (ftReplaced, replacedft) <- callbackStream
     (initsegs, initmodel) <- sync $ setFTContents editor initft
     initdft <- watchFtModel initsegs initmodel
+    dynft <- sample$ foldrSwitch initdft ftReplaced
 
-    loadButton <- sync $ fileChooserButtonNew "load" FileChooserActionOpen
-    sync $ boxPackStart vb loadButton PackNatural 0
-    filePicked <- fmap catMaybesEs $ getSignal fileChooserButtonFileSet loadButton (=<< fileChooserGetFilename loadButton)
-    traceEs "PICKED " filePicked
-    flip callStream filePicked $ \(fn:_) -> do
-        emft <- async $ loadFTfromFile fn
-        planNow . ffor emft $ \case
-            Nothing -> return ()
+    bar <- sync $ hBoxNew False 0
+
+    csvfilter <- sync $ fileFilterNew
+    allfilter <- sync $ fileFilterNew
+    sync $ do
+        fileFilterAddMimeType csvfilter "text/csv"
+        fileFilterSetName csvfilter "CSV"
+        fileFilterAddPattern allfilter "*"
+        fileFilterSetName allfilter "All Files"
+
+    loadButton <- sync $ buttonNewFromStock stockOpen
+    loadPressed <- getUnitSignal buttonActivated loadButton
+    loadDialog <- sync $ fileChooserDialogNew (Just "Open Feature Table") transwin FileChooserActionOpen
+        [("gtk-cancel", ResponseCancel), ("gtk-open", ResponseAccept)]
+    sync $ fileChooserAddFilter loadDialog csvfilter
+    sync $ fileChooserAddFilter loadDialog allfilter
+    flip callStream loadPressed $ \_ -> do
+        filePicked <- runFileChooserDialog loadDialog
+        emft <- planNow . ffor filePicked $ \case
+            Nothing -> return never
+            Just fn -> async $ loadFTfromFile fn
+        planNow . ffor (join emft) $ \case
+            Nothing -> do
+                sync $ putStrLn "Invalid CSV table."
+                return ()
             Just newft -> do
                 (newsegs, newmodel) <- sync $ setFTContents editor newft
                 newdft <- watchFtModel newsegs newmodel
                 sync $ replacedft newdft
+                sync $ putStrLn "Feature table sucessfully loaded."
         return ()
 
-    dynft <- sample$ foldrSwitch initdft ftReplaced
+    saveButton <- sync $ buttonNewFromStock stockSaveAs
+    savePressed <- getUnitSignal buttonActivated saveButton
+    saveDialog <- sync $ fileChooserDialogNew (Just "Save Feature Table") transwin FileChooserActionSave
+        [("gtk-cancel", ResponseCancel), ("gtk-save", ResponseAccept)]
+    sync $ fileChooserAddFilter saveDialog csvfilter
+    sync $ fileChooserAddFilter saveDialog allfilter
+    flip callStream savePressed $ \_  -> do
+        savePicked <- runFileChooserDialog saveDialog
+        planNow . ffor savePicked $ \case
+            Nothing -> return ()
+            Just fn -> do
+                ft <- sample dynft
+                async $ do
+                    let csv = featureTableToCsv id ft
+                        bincsv = T.encodeUtf8 (T.pack csv)
+                    B.writeFile fn bincsv
+                    putStrLn $ "Wrote Feature Table " ++ fn
+                return ()
+        return ()
+
+    sync $ do
+        boxPackStart vb bar PackNatural 0
+        boxPackStart bar loadButton PackNatural 0
+        boxPackStart bar saveButton PackNatural 0
+
     return (vb, dynft)

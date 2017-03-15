@@ -18,7 +18,7 @@ module Text.PhonotacticLearner.PhonotacticConstraints (
 
     FeatureTable(..), srBounds, ftlook,
     segsToRefs, refsToSegs,
-    csvToFeatureTable,
+    csvToFeatureTable, featureTableToCsv,
 
     -- * Natural Classes
     NaturalClass(..), classToSeglist,
@@ -136,6 +136,15 @@ csvToFeatureTable readSeg rawcsv = do
         featmap  = M.fromList (fmap swap (assocs featlist))
     guard (M.size segmap == rangeSize (bounds seglist))
     return (FeatureTable ft featlist seglist featmap segmap)
+
+fschar FPlus = "+"
+fschar FMinus = "-"
+fschar FOff = "0"
+
+featureTableToCsv :: (sigma -> String) -> FeatureTable sigma -> String
+featureTableToCsv writeSeg ft = writeCSV (header : body) where
+    header = "" : fmap writeSeg (elems (segNames ft))
+    body = [T.unpack fn : [fschar (ftlook ft s f) | s <- indices (segNames ft)] | (f,fn) <- assocs (featNames ft)]
 
 -- | Parse a list of strings (one per line) into a list of SegRef strings and frequencies.
 -- Takes a feature table and a function to divide strings into segments (for single character segments, @fmap return@ may be used).

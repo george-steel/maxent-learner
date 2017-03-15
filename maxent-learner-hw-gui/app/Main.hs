@@ -55,7 +55,7 @@ main = runNowGTK $ mdo
     -- example gtk app
     -- initialization code
     window <- sync $ windowNew
-    (editor,dynft) <- createEditableFT ipaft
+    (editor,dynft) <- createEditableFT (Just window) ipaft
     fmat <- displayDynFeatureTable dynft
     sync $ do
         sp <- cssProviderNew
@@ -71,7 +71,7 @@ main = runNowGTK $ mdo
         containerAdd window vb
         containerAdd fr fmat
 
-    traceChanges "FT " dynft
+    --traceChanges "FT " dynft
 
     sync $ window `on` deleteEvent $ liftIO mainQuit >> return False
 
