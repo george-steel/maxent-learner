@@ -1,8 +1,9 @@
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase, OverloadedStrings, ExtendedDefaultRules #-}
 
 module FeatureTableEditor where
 
 import Graphics.UI.Gtk
+import Graphics.UI.Gtk.General.StyleContext
 import Control.FRPNow hiding (swap)
 import Control.FRPNow.GTK
 import Control.Monad
@@ -18,6 +19,8 @@ import qualified Data.Map.Lazy as M
 import qualified Data.ByteString as B
 import System.IO
 import Control.DeepSeq
+
+default (T.Text)
 
 data FTRow = FTRow T.Text (M.Map SegRef FeatureState) deriving (Eq, Show)
 
@@ -55,7 +58,7 @@ rows2ft segs rows = FeatureTable ftarr fnames segs flook slook where
 
 setFTContents :: TreeView -> FeatureTable String -> IO (Array SegRef String, ListStore FTRow)
 setFTContents editor newft = do
-    let segs = (segNames newft)
+    let segs = segNames newft
         rows = ft2rows newft
     model <- listStoreNew rows
     oldcols <- treeViewGetColumns editor
@@ -95,8 +98,8 @@ setFTContents editor newft = do
 nothingOnIOError :: IOError -> IO (Maybe a)
 nothingOnIOError _ = return Nothing
 
-watchFtModel :: Array SegRef String -> ListStore FTRow -> Now (Behavior (FeatureTable String))
-watchFtModel segs model = do
+watchFtModel :: (Array SegRef String, ListStore FTRow) -> Now (Behavior (FeatureTable String))
+watchFtModel (segs, model) = do
     (rowsChanged, rowcb) <- callbackStream
     let changecb = listStoreToList model >>= rowcb
     sync $ do
@@ -114,8 +117,8 @@ loadFTfromFile fp = handle nothingOnIOError $ do
 
 createEditableFT :: Maybe Window -> FeatureTable String -> Now (VBox, Behavior (FeatureTable String))
 createEditableFT transwin initft = do
-    vb <- sync $ vBoxNew False 0
-    editor <- sync $ treeViewNew
+    vb <- sync $ vBoxNew False 2
+    editor <- sync treeViewNew
     sync $ do
         scr <- scrolledWindowNew Nothing Nothing
         fr <- frameNew
@@ -123,23 +126,26 @@ createEditableFT transwin initft = do
         containerAdd scr editor
         containerAdd fr scr
         boxPackStart vb fr PackGrow 0
-    (ftReplaced, replacedft) <- callbackStream
-    (initsegs, initmodel) <- sync $ setFTContents editor initft
-    initdft <- watchFtModel initsegs initmodel
-    dynft <- sample$ foldrSwitch initdft ftReplaced
+    (ftReplaced, replaceft) <- callbackStream
+    (modelReplaced, replaceModel) <- callbackStream
+    initmodel <- sync $ setFTContents editor initft
+    currentModel <- sample $ fromChanges initmodel modelReplaced
 
-    bar <- sync $ hBoxNew False 0
+    initdft <- watchFtModel initmodel
+    callStream (sync . replaceft <=< watchFtModel . last) modelReplaced
+    currentft <- sample$ foldrSwitch initdft ftReplaced
 
-    csvfilter <- sync $ fileFilterNew
-    allfilter <- sync $ fileFilterNew
+    bar <- sync $ hBoxNew False 2
+
+    csvfilter <- sync fileFilterNew
+    allfilter <- sync fileFilterNew
     sync $ do
         fileFilterAddMimeType csvfilter "text/csv"
         fileFilterSetName csvfilter "CSV"
         fileFilterAddPattern allfilter "*"
         fileFilterSetName allfilter "All Files"
 
-    loadButton <- sync $ buttonNewFromStock stockOpen
-    loadPressed <- getUnitSignal buttonActivated loadButton
+    (loadButton, loadPressed) <- createIconButton "document-open" (Just "Load New Table")
     loadDialog <- sync $ fileChooserDialogNew (Just "Open Feature Table") transwin FileChooserActionOpen
         [("gtk-cancel", ResponseCancel), ("gtk-open", ResponseAccept)]
     sync $ fileChooserAddFilter loadDialog csvfilter
@@ -150,18 +156,14 @@ createEditableFT transwin initft = do
             Nothing -> return never
             Just fn -> async $ loadFTfromFile fn
         planNow . ffor (join emft) $ \case
-            Nothing -> do
-                sync $ putStrLn "Invalid CSV table."
-                return ()
-            Just newft -> do
-                (newsegs, newmodel) <- sync $ setFTContents editor newft
-                newdft <- watchFtModel newsegs newmodel
-                sync $ replacedft newdft
-                sync $ putStrLn "Feature table sucessfully loaded."
+            Nothing -> sync $ putStrLn "Invalid CSV table."
+            Just newft -> sync $ do
+                newmodel <- setFTContents editor newft
+                replaceModel newmodel
+                putStrLn "Feature table sucessfully loaded."
         return ()
 
-    saveButton <- sync $ buttonNewFromStock stockSaveAs
-    savePressed <- getUnitSignal buttonActivated saveButton
+    (saveButton, savePressed) <- createIconButton "document-save" (Just "Save Table")
     saveDialog <- sync $ fileChooserDialogNew (Just "Save Feature Table") transwin FileChooserActionSave
         [("gtk-cancel", ResponseCancel), ("gtk-save", ResponseAccept)]
     sync $ fileChooserAddFilter saveDialog csvfilter
@@ -171,7 +173,7 @@ createEditableFT transwin initft = do
         planNow . ffor savePicked $ \case
             Nothing -> return ()
             Just fn -> do
-                ft <- sample dynft
+                ft <- sample currentft
                 async $ do
                     let csv = featureTableToCsv id ft
                         bincsv = T.encodeUtf8 (T.pack csv)
@@ -180,9 +182,78 @@ createEditableFT transwin initft = do
                 return ()
         return ()
 
+    (addButton,addPressed) <- createIconButton "list-add" (Just "Add Feature")
+    (delButton,delPressed) <- createIconButton "list-remove" (Just "Remove Feature")
+    flip callStream addPressed $ \_ -> do
+        (segs, store) <- sample currentModel
+        let newRow = FTRow "" (M.fromList [(s,FOff) | s <- indices segs])
+        sync $ listStoreAppend store newRow
+        return ()
+    flip callStream delPressed $ \_ -> do
+        (segs, store) <- sample currentModel
+        (cur, _) <- sync $ treeViewGetCursor editor
+        sync $ case cur of
+            [i] -> listStoreRemove store i
+            _ -> return ()
+
     sync $ do
         boxPackStart vb bar PackNatural 0
+        spacer <- hBoxNew False 0
+        boxPackStart bar addButton PackNatural 0
+        boxPackStart bar delButton PackNatural 0
+        boxPackStart bar spacer PackGrow 10
         boxPackStart bar loadButton PackNatural 0
         boxPackStart bar saveButton PackNatural 0
 
-    return (vb, dynft)
+    return (vb, currentft)
+
+widgetAddClasses :: WidgetClass widget => widget -> [T.Text] -> IO ()
+widgetAddClasses w cs = do
+    sc <- widgetGetStyleContext w
+    forM_ cs $ \c -> styleContextAddClass sc c
+
+displayFeatureMatrix :: FeatureTable String -> IO Grid
+displayFeatureMatrix ft = do
+    g <- gridNew
+    set g [widgetName := Just "featuretable"]
+    --set g [ containerBorderWidth := 5 ]
+    --gridSetColumnSpacing g 2
+    forM_ (assocs (segNames ft)) $ \(Seg n,s) -> do
+        l <- labelNew (Just s)
+        let oddclass = if odd n then ["oddcol"] else []
+        widgetAddClasses l $ ["segheader"] ++ oddclass
+        gridAttach g l n 0 1 1
+    forM_ (assocs (featNames ft)) $ \(n,f) -> do
+        l <- labelNew (Just f)
+        widgetAddClasses l ["featheader"]
+        set l [miscXalign := 0]
+        gridAttach g l 0 n 1 1
+    forM_ (assocs (featTable ft)) $ \((Seg s, f), fs) -> do
+        l <- case fs of
+            FPlus -> labelNew (Just "+")
+            FMinus -> labelNew (Just "−")
+            FOff -> do
+                l <- labelNew (Just "0")
+                widgetAddClasses l ["featzero"]
+                return l
+        let oddclass = if odd s then ["oddcol"] else []
+        widgetAddClasses l oddclass
+        gridAttach g l s f 1 1
+    return g
+
+displayDynFeatureTable :: Behavior (FeatureTable String) -> Now ScrolledWindow
+displayDynFeatureTable dynft = do
+    initft <- sample dynft
+    let ftchanged = toChanges dynft
+    scr <- sync $ scrolledWindowNew Nothing Nothing
+    initwidget <- sync $ displayFeatureMatrix initft
+    sync $ scrolledWindowAddWithViewport scr initwidget
+    Just vp' <- sync $ binGetChild scr
+    let vp = castToViewport vp'
+    flip callIOStream ftchanged $ \newft -> do
+        Just oldw <- binGetChild vp
+        widgetDestroy oldw
+        newwidget <- displayFeatureMatrix newft
+        containerAdd vp newwidget
+        widgetShowAll newwidget
+    return scr
