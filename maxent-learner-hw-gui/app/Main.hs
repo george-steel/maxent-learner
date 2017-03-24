@@ -19,6 +19,7 @@ import Data.FileEmbed
 import Text.RawString.QQ
 import Data.Maybe
 import FeatureTableEditor
+import LexiconEditor
 
 ipaft :: FeatureTable String
 ipaft = fromJust (csvToFeatureTable id $(embedStringFile "./app/ft-ipa.csv"))
@@ -47,21 +48,24 @@ main = runNowGTK $ mdo
     -- example gtk app
     -- initialization code
     window <- sync $ windowNew
-    (editor,dynft) <- createEditableFT (Just window) ipaft
+    (fteditor,dynft) <- createEditableFT (Just window) ipaft
+    (lexeditor,dynlex) <- createEditableLexicon (fmap segsFromFt dynft) emptyEs
     fmat <- displayDynFeatureTable dynft
     sync $ do
+        panes <- hPanedNew
         sp <- cssProviderNew
         cssProviderLoadFromString sp css
         thescreen <- widgetGetScreen window
         styleContextAddProviderForScreen thescreen sp 600
         fr <- frameNew
         set fr [frameShadowType := ShadowIn ]
-        --set scr [widgetName := Just "ftcontainer"]
-        vb <- vBoxNew False 0
-        boxPackStart vb editor PackGrow 0
-        boxPackStart vb fr PackGrow 0
-        containerAdd window vb
         containerAdd fr fmat
+        vb <- vBoxNew False 0
+        boxPackStart vb fteditor PackGrow 0
+        boxPackStart vb fr PackGrow 0
+        panedAdd1 panes vb
+        panedAdd2 panes lexeditor
+        containerAdd window panes
 
     sync $ window `on` deleteEvent $ liftIO mainQuit >> return False
 

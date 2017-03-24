@@ -19,8 +19,13 @@ import qualified Data.Map.Lazy as M
 import qualified Data.ByteString as B
 import System.IO
 import Control.DeepSeq
+import System.Glib.GObject
+import Foreign
+import Foreign.C
+import GtkUtils
 
 default (T.Text)
+
 
 data FTRow = FTRow T.Text (M.Map SegRef FeatureState) deriving (Eq, Show)
 
@@ -95,8 +100,6 @@ setFTContents editor newft = do
     treeViewAppendColumn editor pcol
     return (segs, model)
 
-nothingOnIOError :: IOError -> IO (Maybe a)
-nothingOnIOError _ = return Nothing
 
 watchFtModel :: (Array SegRef String, ListStore FTRow) -> Now (Behavior (FeatureTable String))
 watchFtModel (segs, model) = do
@@ -121,6 +124,7 @@ createEditableFT transwin initft = do
     editor <- sync treeViewNew
     sync $ do
         scr <- scrolledWindowNew Nothing Nothing
+        scrolledWindowDisableOverlay scr
         fr <- frameNew
         set fr [frameShadowType := ShadowIn ]
         containerAdd scr editor
@@ -206,11 +210,6 @@ createEditableFT transwin initft = do
         boxPackStart bar saveButton PackNatural 0
 
     return (vb, currentft)
-
-widgetAddClasses :: WidgetClass widget => widget -> [T.Text] -> IO ()
-widgetAddClasses w cs = do
-    sc <- widgetGetStyleContext w
-    forM_ cs $ \c -> styleContextAddClass sc c
 
 displayFeatureMatrix :: FeatureTable String -> IO Grid
 displayFeatureMatrix ft = do

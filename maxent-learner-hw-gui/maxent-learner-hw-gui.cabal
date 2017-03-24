@@ -29,6 +29,7 @@ executable phono-learner-hw-gui
                      , transformers
                      , random == 1.1
                      , gtk3
+                     , glib
                      , frpnow
                      , frpnow-gtk3
                      , raw-strings-qq
