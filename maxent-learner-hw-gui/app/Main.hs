@@ -49,7 +49,7 @@ main = runNowGTK $ mdo
     -- initialization code
     window <- sync $ windowNew
     (fteditor,dynft) <- createEditableFT (Just window) ipaft
-    (lexeditor,dynlex) <- createEditableLexicon (fmap segsFromFt dynft) emptyEs
+    (lexeditor,dynlex) <- createEditableLexicon (Just window) (fmap segsFromFt dynft) emptyEs
     fmat <- displayDynFeatureTable dynft
     sync $ do
         panes <- hPanedNew

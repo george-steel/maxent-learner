@@ -1,6 +1,10 @@
 {-# LANGUAGE LambdaCase, OverloadedStrings, ExtendedDefaultRules #-}
 
-module FeatureTableEditor where
+module FeatureTableEditor (
+    createEditableFT,
+    displayFeatureMatrix,
+    displayDynFeatureTable
+) where
 
 import Graphics.UI.Gtk
 import Graphics.UI.Gtk.General.StyleContext
