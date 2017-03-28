@@ -130,11 +130,11 @@ createEditableLexicon transwin currentsegs extreplace = do
         containerAdd fr scr
         boxPackStart vb fr PackGrow 0
     bar <- sync $ hBoxNew False 2
-    (addButton,addPressed) <- createIconButton "list-add" Nothing
-    (delButton,delPressed) <- createIconButton "list-remove" Nothing
-    (loadListButton, loadListPressed) <- createIconButton "document-open" (Just "Load Word List")
-    (loadTextButton, loadTextPressed) <- createIconButton "document-open" (Just "Load Raw Text")
-    (saveButton, savePressed) <- createIconButton "document-save" (Just "Save Word List")
+    (addButton,addPressed) <- createButton (Just "list-add") Nothing
+    (delButton,delPressed) <- createButton (Just "list-remove") Nothing
+    (loadListButton, loadListPressed) <- createButton (Just "document-open") (Just "Load Word List")
+    (loadTextButton, loadTextPressed) <- createButton (Just "document-open") (Just "Load Raw Text")
+    (saveButton, savePressed) <- createButton (Just "document-save") (Just "Save Word List")
     sync $ do
         boxPackStart vb bar PackNatural 0
         spacer <- hBoxNew False 0

@@ -38,8 +38,8 @@ fsTrue FMinus = False
 fsTrue FOff = False
 
 fsInc FPlus = False
-fsInc FMinus = False
-fsInc FOff = True
+fsInc FMinus = True
+fsInc FOff = False
 
 fsCycle FPlus = FMinus
 fsCycle FMinus = FOff
@@ -125,15 +125,15 @@ loadFTfromFile fp = handle nothingOnIOError $ do
 createEditableFT :: Maybe Window -> FeatureTable String -> Now (VBox, Behavior (FeatureTable String))
 createEditableFT transwin initft = do
     vb <- sync $ vBoxNew False 2
+    top <- sync stackNew
     editor <- sync treeViewNew
-    sync $ do
-        scr <- scrolledWindowNew Nothing Nothing
-        scrolledWindowDisableOverlay scr
-        fr <- frameNew
-        set fr [frameShadowType := ShadowIn ]
-        containerAdd scr editor
-        containerAdd fr scr
-        boxPackStart vb fr PackGrow 0
+
+    (loadButton, loadPressed) <- createButton (Just "document-open") (Just "Load Table")
+    (saveButton, savePressed) <- createButton (Just "document-save") (Just "Save Table")
+    (addButton, addPressed) <- createButton (Just "list-add") Nothing
+    (delButton, delPressed) <- createButton (Just "list-remove") Nothing
+    (editButton, isEditing) <- createToggleButton (Just "accessories-text-editor") (Just "Edit Table") False
+
     (ftReplaced, replaceft) <- callbackStream
     (modelReplaced, replaceModel) <- callbackStream
     initmodel <- sync $ setFTContents editor initft
@@ -143,7 +143,32 @@ createEditableFT transwin initft = do
     callStream (sync . replaceft <=< watchFtModel . last) modelReplaced
     currentft <- sample$ foldrSwitch initdft ftReplaced
 
-    bar <- sync $ hBoxNew False 2
+    viewer <- displayDynFeatureTable currentft
+
+    sync $ do
+        bar <- hBoxNew False 2
+        spacer <- hBoxNew False 0
+        boxPackStart bar addButton PackNatural 0
+        boxPackStart bar delButton PackNatural 0
+        boxPackStart bar spacer PackGrow 10
+        boxPackStart bar editButton PackNatural 0
+        boxPackStart bar loadButton PackNatural 0
+        boxPackStart bar saveButton PackNatural 0
+
+        scr <- scrolledWindowNew Nothing Nothing
+        scrolledWindowDisableOverlay scr
+        fr <- frameNew
+        set fr [frameShadowType := ShadowIn ]
+        containerAdd scr editor
+
+        stackAddNamed top viewer "False"
+        stackAddNamed top scr "True"
+        boxPackStart vb top PackGrow 0
+        boxPackStart vb bar PackNatural 0
+
+    setAttr stackVisibleChildName top (fmap show isEditing)
+    setAttr widgetSensitive addButton isEditing
+    setAttr widgetSensitive delButton isEditing
 
     csvfilter <- sync fileFilterNew
     allfilter <- sync fileFilterNew
@@ -153,7 +178,6 @@ createEditableFT transwin initft = do
         fileFilterAddPattern allfilter "*"
         fileFilterSetName allfilter "All Files"
 
-    (loadButton, loadPressed) <- createIconButton "document-open" (Just "Load New Table")
     loadDialog <- sync $ fileChooserDialogNew (Just "Open Feature Table") transwin FileChooserActionOpen
         [("gtk-cancel", ResponseCancel), ("gtk-open", ResponseAccept)]
     sync $ fileChooserAddFilter loadDialog csvfilter
@@ -171,7 +195,6 @@ createEditableFT transwin initft = do
                 putStrLn "Feature table sucessfully loaded."
         return ()
 
-    (saveButton, savePressed) <- createIconButton "document-save" (Just "Save Table")
     saveDialog <- sync $ fileChooserDialogNew (Just "Save Feature Table") transwin FileChooserActionSave
         [("gtk-cancel", ResponseCancel), ("gtk-save", ResponseAccept)]
     sync $ fileChooserAddFilter saveDialog csvfilter
@@ -190,8 +213,6 @@ createEditableFT transwin initft = do
                 return ()
         return ()
 
-    (addButton,addPressed) <- createIconButton "list-add" (Just "Add Feature")
-    (delButton,delPressed) <- createIconButton "list-remove" (Just "Remove Feature")
     flip callStream addPressed $ \_ -> do
         (segs, store) <- sample currentModel
         let newRow = FTRow "" (M.fromList [(s,FOff) | s <- indices segs])
@@ -203,15 +224,6 @@ createEditableFT transwin initft = do
         sync $ case cur of
             [i] -> listStoreRemove store i
             _ -> return ()
-
-    sync $ do
-        boxPackStart vb bar PackNatural 0
-        spacer <- hBoxNew False 0
-        boxPackStart bar addButton PackNatural 0
-        boxPackStart bar delButton PackNatural 0
-        boxPackStart bar spacer PackGrow 10
-        boxPackStart bar loadButton PackNatural 0
-        boxPackStart bar saveButton PackNatural 0
 
     return (vb, currentft)
 
