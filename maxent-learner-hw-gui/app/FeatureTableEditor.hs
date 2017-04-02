@@ -7,12 +7,9 @@ module FeatureTableEditor (
 ) where
 
 import Graphics.UI.Gtk
-import Graphics.UI.Gtk.General.StyleContext
 import Control.FRPNow hiding (swap)
 import Control.FRPNow.GTK
 import Control.Monad
-import Control.Monad.Trans
-import Control.Monad.Trans.Maybe
 import Control.Exception
 import Data.Tuple
 import Text.PhonotacticLearner.PhonotacticConstraints
@@ -21,11 +18,7 @@ import qualified Data.Text.Encoding as T
 import Data.Array.IArray
 import qualified Data.Map.Lazy as M
 import qualified Data.ByteString as B
-import System.IO
 import Control.DeepSeq
-import System.Glib.GObject
-import Foreign
-import Foreign.C
 import GtkUtils
 
 default (T.Text)

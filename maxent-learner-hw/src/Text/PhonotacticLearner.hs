@@ -12,8 +12,6 @@ Main learning algorithm for inferring granmmar from constraint set and lexicon. 
 
 module Text.PhonotacticLearner(
     generateGrammarIO,
-
-    segmentFiero, joinFiero,
 ) where
 
 import Text.PhonotacticLearner.Util.Ring
@@ -109,31 +107,3 @@ generateGrammarIO samplesize thresholds candidates wfs = do
         putStrLn "\n\n\nAll Pases Complete."
 
     readIORef currentGrammar
-
--- | Given a set of possible segments and a string, break a string into segments.
--- Uses the rules in Fiero orthography (a phonetic writing system using ASCII characters) where the longest possible match is always taken and apostrophes are used as a digraph break.
-segmentFiero :: [String] -- ^ All possible segments
-             -> String -- ^ Raw text
-             -> [String] -- ^ Segmented text
-segmentFiero [] = error "Empty segment list."
-segmentFiero allsegs = go msl where
-    msl = maximum . fmap length $ allsegs
-    go _ [] = []
-    go _ ('\'':xs) = go msl xs
-    go 0 (x:xs) = go msl xs
-    go len xs | seg `elem` allsegs = seg : go msl rest
-              | otherwise = go (len-1) xs
-        where (seg,rest) = splitAt len xs
-
--- | Joins segments together using Fiero rules. Inserts apostrophes where necerssary.
-joinFiero :: [String] -- ^ All possible segments
-          -> [String] -- ^ Segmented text
-          -> String -- ^ Raw text
-joinFiero allsegs = go where
-    msl = maximum . fmap length $ allsegs
-    go [] = []
-    go [x] = x
-    go (x:xs@(y:_)) = let z = x++y
-                      in  if any (\s -> isPrefixOf s z && not (isPrefixOf s x)) allsegs
-                          then x ++ ('\'' : go xs)
-                          else x ++ go xs

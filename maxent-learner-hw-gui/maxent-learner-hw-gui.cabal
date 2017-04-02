@@ -16,7 +16,7 @@ cabal-version:       >=1.10
 executable phono-learner-hw-gui
   hs-source-dirs:      app
   main-is:             Main.hs
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  ghc-options:         -Wall -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base >= 4.7 && < 5
                      , maxent-learner-hw == 0.2.0
                      , containers == 0.5.*

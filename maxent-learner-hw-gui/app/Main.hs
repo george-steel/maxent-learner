@@ -13,6 +13,8 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Monad.Trans
 import qualified Data.Text as T
+import qualified Data.Map.Lazy as M
+import qualified Data.Set as S
 import Text.PhonotacticLearner.PhonotacticConstraints
 import Data.Array.IArray
 import Data.FileEmbed
@@ -20,6 +22,7 @@ import Text.RawString.QQ
 import Data.Maybe
 import FeatureTableEditor
 import LexiconEditor
+import GrammarEditor
 
 ipaft :: FeatureTable String
 ipaft = fromJust (csvToFeatureTable id $(embedStringFile "./app/ft-ipa.csv"))
@@ -48,34 +51,31 @@ main = runNowGTK $ mdo
     -- example gtk app
     -- initialization code
     window <- sync $ windowNew
-    (fteditor,dynft) <- createEditableFT (Just window) ipaft
-    (lexeditor,dynlex) <- createEditableLexicon (Just window) (fmap segsFromFt dynft) emptyEs
+    (fteditor, dynft) <- createEditableFT (Just window) ipaft
+    (lexeditor, dynlex) <- createEditableLexicon (Just window) (fmap segsFromFt dynft) emptyEs
+    (grammareditor, dynGrammar) <- createLoadableGrammar (Just window) (fmap (M.keysSet . featLookup) dynft) emptyEs
+
     fmat <- displayDynFeatureTable dynft
+
     sync $ do
-        panes <- hPanedNew
         sp <- cssProviderNew
         cssProviderLoadFromString sp css
         thescreen <- widgetGetScreen window
         styleContextAddProviderForScreen thescreen sp 600
-        fr <- frameNew
-        set fr [frameShadowType := ShadowIn ]
-        containerAdd fr fmat
-        vb <- vBoxNew False 0
-        boxPackStart vb fteditor PackGrow 0
-        boxPackStart vb fr PackGrow 0
-        panedAdd1 panes vb
-        panedAdd2 panes lexeditor
-        containerAdd window panes
+
+        panes1 <- hPanedNew
+        panes2 <- hPanedNew
+        panes3 <- vPanedNew
+
+        panedPack1 panes3 fteditor True False
+        panedPack2 panes3 fmat True False
+        panedPack1 panes2 panes3 True False
+        panedPack2 panes2 grammareditor True False
+        panedPack1 panes1 lexeditor True False
+        panedPack2 panes1 panes2 True False
+
+        containerAdd window panes1
 
     sync $ window `on` deleteEvent $ liftIO mainQuit >> return False
 
     sync $ widgetShowAll window
-
-
-
-createFileChooserButton :: String -> Now (FileChooserButton, Behavior (Maybe FilePath))
-createFileChooserButton title = do
-    fsb <- sync $ fileChooserButtonNew title FileChooserActionOpen
-    fsev <- getSignal fileChooserButtonFileSet fsb (fileChooserGetFilename fsb >>=)
-    selfile <- sample $ fromChanges Nothing fsev
-    return (fsb,selfile)

@@ -17,6 +17,7 @@ GNU General Public License for more details.
 
 import Text.PhonotacticLearner
 import Text.PhonotacticLearner.PhonotacticConstraints
+import Text.PhonotacticLearner.PhonotacticConstraints.FileFormats
 import Text.PhonotacticLearner.PhonotacticConstraints.Generators
 import Text.PhonotacticLearner.DFST
 import Text.PhonotacticLearner.Util.Ring
@@ -29,7 +30,12 @@ import Control.Monad
 import Control.Monad.State
 import Control.Applicative
 import qualified Data.Text as T
+import qualified Data.Text.IO as T
+import qualified Data.Text.Encoding as T
+import qualified Data.Text.Encoding.Error as T
+import qualified Data.ByteString as B
 import qualified Data.Map.Lazy as M
+import qualified Data.Set as S
 import Data.Monoid
 import Data.Array.IArray
 import Data.Maybe
@@ -140,7 +146,7 @@ main = do
             let segmenter = case segtype args of
                     Words -> words
                     Chars -> fmap return
-                    Fiero -> segmentFiero (elems (segNames ft))
+                    Fiero -> segmentFiero . S.fromList . elems . segNames $ ft
                 cls = force $ classesByGenerality ft 3
             lexdata <- readFile lexfile
             let lexlist = readlex ft segmenter lexdata
@@ -161,35 +167,29 @@ main = do
 
             (grammar, dfa, weights) <- generateGrammarIO (samplesize args) thresh candidates lexlist
 
-            let output = "# Length Distribution:\n" ++ (show . assocs . lengthFreqs $ wfs) ++ "\n\n# Rules:\n" ++ prettyprintGrammar grammar weights
+            let output = serGrammar (PhonoGrammar (lengthFreqs wfs) grammar weights)
 
             putStrLn "\n\n\n\n"
-            putStrLn output
+            T.putStrLn output
 
             case outfile args of
-                Just outf -> writeFile outf output
+                Just outf -> B.writeFile outf (T.encodeUtf8 output)
                 Nothing -> return ()
 
 
 
         GenSalad gfile -> do
-            rawgrammar <- readFile gfile
+            rawgrammar <- fmap (T.decodeUtf8With T.lenientDecode) (B.readFile gfile)
+            Just (PhonoGrammar lendist rulelist weights) <- evaluate . force $ parseGrammar rawgrammar
 
-            (fline:glines) <- evaluate $ filter isNonComment (lines rawgrammar)
-
-            let lendist :: [(Int,Int)] = read fline
-                grammar :: [(Double,ClassGlob)] = fmap ((read *** read) . break isSpace) glines
-                lencdf = massToCdf (fmap (second fromIntegral) lendist)
-                (weightlist,rulelist) = unzip (reverse grammar)
-                weights = vec weightlist
+            let lencdf = massToCdf (fmap (second fromIntegral) (assocs lendist))
                 blankdfa = nildfa (srBounds ft)
                 dfa = foldr (\g t -> force $ dfaProduct consMC (unpackDFA . cgMatchCounter ft $ g) (force t)) blankdfa rulelist
                 unsegmenter = case segtype args of
                     Words -> unwords
                     Chars -> join
-                    Fiero -> joinFiero (elems (segNames ft))
+                    Fiero -> joinFiero . S.fromList . elems . segNames $ ft
 
-            evaluate . force $ grammar
             evaluate . force $ dfa
 
             salad <- getStdRandom . runState $ sampleWordSalad (fmap (maxentProb weights) dfa) lencdf (samplesize args)

@@ -5,33 +5,28 @@ module LexiconEditor (
 ) where
 
 import Graphics.UI.Gtk
-import Graphics.UI.Gtk.General.StyleContext
 import Control.FRPNow hiding (swap, when)
 import Control.FRPNow.GTK
 import Control.Monad
-import Control.Monad.Trans
-import Control.Monad.Trans.Maybe
 import Control.Exception
 import Data.Foldable
 import Data.Tuple
 import Data.Tuple.Select
 import Data.Maybe
 import Text.PhonotacticLearner.PhonotacticConstraints
-import Text.PhonotacticLearner.MaxentGrammar
+import Text.PhonotacticLearner.PhonotacticConstraints.FileFormats
 import Text.PhonotacticLearner
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import qualified Data.Text.Encoding.Error as T
-import Data.Array.IArray
-import qualified Data.Map.Lazy as M
 import qualified Data.ByteString as B
+import qualified Data.Map.Lazy as M
 import qualified Data.Set as S
-import System.IO
 import Control.DeepSeq
 import Text.Read (readMaybe)
 import GtkUtils
 
-data LexRow = LexRow {word :: [String], freq :: Int}
+default(T.Text)
 
 data LexSourceType = FieroList | FieroText
 
@@ -40,37 +35,9 @@ data LexSource = Custom | FromStored LexSourceType T.Text
 segsFromFt :: FeatureTable String -> S.Set String
 segsFromFt = M.keysSet . segLookup
 
-parseWordlist :: S.Set String -> T.Text -> [LexRow]
-parseWordlist segs rawlist = do
-    let seglist = toList segs
-    line <- T.lines rawlist
-    let (rawword : rest) = T.split (== '\t') line
-        word = segmentFiero seglist (T.unpack rawword)
-        freq = fromMaybe 1 $ do
-            [f] <- return rest
-            readMaybe (T.unpack f)
-    guard (word /= [])
-    return $ LexRow word freq
-
-collateWordlist :: S.Set String -> T.Text -> [LexRow]
-collateWordlist segs rawtext = fmap (uncurry LexRow) . M.assocs . M.fromListWith (+) $ do
-    let seglist = toList segs
-    rawword <- T.words rawtext
-    let word = segmentFiero seglist (T.unpack rawword)
-    guard (word /= [])
-    return (word, 1)
-
-serWordlist :: S.Set String -> [LexRow] -> T.Text
-serWordlist segs = T.unlines . fmap (T.pack . showRow) where
-    seglist = toList segs
-    showRow (LexRow _ n) | n <= 0 = ""
-    showRow (LexRow w 1) = joinFiero seglist w
-    showRow (LexRow w n) = joinFiero seglist w ++ "\t" ++ show n
-
 
 setLexContents :: TreeView -> S.Set String -> [LexRow] -> IO (ListStore LexRow)
 setLexContents editor segs initlist = do
-    let seglist = toList segs
     model <- listStoreNew initlist
     oldcols <- treeViewGetColumns editor
     forM_ oldcols $ \col -> treeViewRemoveColumn editor col
@@ -82,9 +49,9 @@ setLexContents editor segs initlist = do
     set wcell [cellTextEditable := True]
     cellLayoutPackStart wcol wcell True
     treeViewAppendColumn editor wcol
-    cellLayoutSetAttributes wcol wcell model $ \row -> [cellText := joinFiero seglist (word row)]
+    cellLayoutSetAttributes wcol wcell model $ \row -> [cellText := joinFiero segs (word row)]
     on wcell edited $ \[i] rawword -> do
-        let newword = segmentFiero seglist rawword
+        let newword = segmentFiero segs rawword
         row <- listStoreGetValue model i
         when (word row /= newword) $ listStoreSetValue model i (row {word = newword})
 
@@ -132,9 +99,9 @@ createEditableLexicon transwin currentsegs extreplace = do
     bar <- sync $ hBoxNew False 2
     (addButton,addPressed) <- createButton (Just "list-add") Nothing
     (delButton,delPressed) <- createButton (Just "list-remove") Nothing
-    (loadListButton, loadListPressed) <- createButton (Just "document-open") (Just "Load Word List")
-    (loadTextButton, loadTextPressed) <- createButton (Just "document-open") (Just "Load Raw Text")
-    (saveButton, savePressed) <- createButton (Just "document-save") (Just "Save Word List")
+    (loadListButton, loadListPressed) <- createButton (Just "document-open") (Just "Load Lexicon")
+    (loadTextButton, loadTextPressed) <- createButton (Just "document-open") (Just "Collate Text")
+    (saveButton, savePressed) <- createButton (Just "document-save") (Just "Save Lexicon")
     sync $ do
         boxPackStart vb bar PackNatural 0
         spacer <- hBoxNew False 0
@@ -171,7 +138,7 @@ createEditableLexicon transwin currentsegs extreplace = do
     allfilter <- sync fileFilterNew
     sync $ do
         fileFilterAddMimeType txtfilter "text/*"
-        fileFilterSetName txtfilter "Text Filter"
+        fileFilterSetName txtfilter "Text Files"
         fileFilterAddPattern allfilter "*"
         fileFilterSetName allfilter "All Files"
 
