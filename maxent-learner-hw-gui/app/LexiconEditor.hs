@@ -96,21 +96,20 @@ createEditableLexicon transwin currentsegs extreplace = do
         containerAdd scr editor
         containerAdd fr scr
         boxPackStart vb fr PackGrow 0
-    bar <- sync $ hBoxNew False 2
+
     (addButton,addPressed) <- createButton (Just "list-add") Nothing
     (delButton,delPressed) <- createButton (Just "list-remove") Nothing
     (loadListButton, loadListPressed) <- createButton (Just "document-open") (Just "Load Lexicon")
     (loadTextButton, loadTextPressed) <- createButton (Just "document-open") (Just "Collate Text")
     (saveButton, savePressed) <- createButton (Just "document-save") (Just "Save Lexicon")
-    sync $ do
-        boxPackStart vb bar PackNatural 0
-        spacer <- hBoxNew False 0
-        boxPackStart bar addButton PackNatural 0
-        boxPackStart bar delButton PackNatural 0
-        boxPackStart bar spacer PackGrow 10
-        boxPackStart bar loadListButton PackNatural 0
-        boxPackStart bar loadTextButton PackNatural 0
-        boxPackStart bar saveButton PackNatural 0
+    bar <- sync . createHBox $ do
+        bpack addButton
+        bpack delButton
+        bspacer
+        bpack loadListButton
+        bpack loadTextButton
+        bpack saveButton
+    sync $ boxPackStart vb bar PackNatural 0
 
     let segsChanged = toChanges currentsegs
     (modelChanged, changeModel) <- callbackStream

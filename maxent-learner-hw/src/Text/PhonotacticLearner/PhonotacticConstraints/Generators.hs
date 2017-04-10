@@ -14,6 +14,7 @@ The 'classesByGenreraity' function enumerates the classes defined by a feature t
 -}
 
 module Text.PhonotacticLearner.PhonotacticConstraints.Generators (
+    CandidateSettings(..), candidateGrammar,
     ngrams,
     classesByGenerality,
     ugSingleClasses, ugBigrams,
@@ -28,8 +29,33 @@ import Text.PhonotacticLearner.DFST
 import Data.List
 import Data.Array.IArray
 import qualified Data.Map as M
+import qualified Data.Text as T
+import qualified Data.Set as S
 import Control.Monad
 import Control.DeepSeq
+
+data CandidateSettings = CandidateSettings {
+    useEdges :: Bool,
+    useTrigrams :: Maybe [T.Text],
+    useBroken :: Maybe [T.Text]
+} deriving (Eq, Show)
+
+candidateGrammar :: FeatureTable sigma -> CandidateSettings -> (Int , Int, [(ClassGlob, ListGlob SegRef)])
+candidateGrammar ft (CandidateSettings edges mtri mbroken) = ncls `seq` rnf candidates `seq` (ncls, ncand, candidates) where
+    cls = classesByGenerality ft 3
+    ncls = length cls
+    cand1 = ugSingleClasses cls
+    cande1 = if edges then ugEdgeClasses cls else []
+    cand2 = ugBigrams cls
+    cande2 = if edges then ugEdgeBigrams cls else []
+    cand3 = case mtri of
+        Nothing -> []
+        Just tri -> ugLimitedTrigrams cls (coreClassesFromFeats ft tri)
+    candb = case mbroken of
+        Nothing -> []
+        Just broken -> ugLongDistance cls (coreClassesFromFeats ft broken)
+    candidates = join [cand1,cande1,cand2,cande2,cand3,candb]
+    ncand = length candidates
 
 -- | Given a number n and a sequence, returns all subsewuences of length n.
 ngrams  :: Int -> [a] -> [[a]]
@@ -55,9 +81,16 @@ classesByGenerality ft maxfeats = force $ fmap (\((ns, cs), c) -> (ns,(c,cs))) (
             guard (ns /= 0)
             return ((negate ns, cs), c)
 
+coreClassesFromFeats :: FeatureTable sigma -> [T.Text] -> [(NaturalClass, SegSet SegRef)]
+coreClassesFromFeats ft feats = nubBy (\x y -> snd x == snd y) $ do
+    c <- fmap (NClass False) $ [] : (curry return <$> [FPlus,FMinus] <*> feats)
+    let sl = classToSeglist ft c
+    guard $ or (elems sl)
+    return (c,sl)
+
 -- | Given a set of classes, return a set of globs matching those classes.
 ugSingleClasses :: [(Int, (NaturalClass, SegSet SegRef))] -> [(ClassGlob, ListGlob SegRef)]
-ugSingleClasses cls = fmap snd . sortOn fst $ do
+ugSingleClasses cls = fmap snd . sortOn fst . force $ do
     (w,(c,l)) <- cls
     guard (not (isInverted c))
     let g = ClassGlob False False [(GSingle,c)]
@@ -66,7 +99,7 @@ ugSingleClasses cls = fmap snd . sortOn fst $ do
 
 -- Given a set of classes, return a set of globs matching those globs at word boundaries. At most one class may be inverted.
 ugEdgeClasses :: [(Int, (NaturalClass, SegSet SegRef))] -> [(ClassGlob, ListGlob SegRef)]
-ugEdgeClasses cls = fmap snd . sortOn fst $ do
+ugEdgeClasses cls = fmap snd . sortOn fst . force $ do
     (w,(c,l)) <- cls
     guard (not (isInverted c))
     (isinit,isfin) <- [(False,True),(True,False)]
@@ -76,7 +109,7 @@ ugEdgeClasses cls = fmap snd . sortOn fst $ do
 
 -- | Given a set of classes, return a set pf globs matching class pairs, ordered by total weight. At most one class may be inverted.
 ugBigrams :: [(Int, (NaturalClass, SegSet SegRef))] -> [(ClassGlob, ListGlob SegRef)]
-ugBigrams cls = fmap snd . sortOn fst $ do
+ugBigrams cls = fmap snd . sortOn fst . force $ do
     (w1,(c1,l1)) <- cls
     (w2,(c2,l2)) <- cls
     guard (not (isInverted c1 && isInverted c2))
@@ -86,7 +119,7 @@ ugBigrams cls = fmap snd . sortOn fst $ do
 
 -- | Given a set of classes, return a set pf globs matching class pairs at word boundaries, ordered by total weight. At most one class may be inverted.
 ugEdgeBigrams :: [(Int, (NaturalClass, SegSet SegRef))] -> [(ClassGlob, ListGlob SegRef)]
-ugEdgeBigrams cls = fmap snd . sortOn fst $ do
+ugEdgeBigrams cls = fmap snd . sortOn fst . force $ do
     (w1,(c1,l1)) <- cls
     (w2,(c2,l2)) <- cls
     guard (not (isInverted c1 && isInverted c2))
@@ -97,7 +130,7 @@ ugEdgeBigrams cls = fmap snd . sortOn fst $ do
 
 -- | Given a set of classes ansd a smaller subset, return a set of globs matching trigrams of classes from the set where at least one class is contained in the subset.  At most one class may be inverted.
 ugLimitedTrigrams :: [(Int, (NaturalClass, SegSet SegRef))] -> [(NaturalClass, SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
-ugLimitedTrigrams cls rcls = fmap snd . sortOn fst $ do
+ugLimitedTrigrams cls rcls = fmap snd . sortOn fst . force $ do
     (w1,(c1,l1)) <- cls
     (w2,(c2,l2)) <- cls
     (w,(c3,l3)) <- case () of
@@ -120,7 +153,7 @@ ugLimitedTrigrams cls rcls = fmap snd . sortOn fst $ do
 -- | Given two sets of classes, return globs matching a pair oc slasses in the first set separated by any number of occurrences of a class in the second set.  At most one class may be inverted. At most one class may be inverted.
 -- This can lead to fairly large grammar DFAs when multiple such constraints are merged.
 ugLongDistance :: [(Int, (NaturalClass, SegSet SegRef))] -> [(NaturalClass, SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
-ugLongDistance cls rcls = fmap snd . sortOn fst $ do
+ugLongDistance cls rcls = fmap snd . sortOn fst . force $ do
     (w1,(c1,l1)) <- cls
     (c2,l2) <- rcls
     (w3,(c3,l3)) <- cls

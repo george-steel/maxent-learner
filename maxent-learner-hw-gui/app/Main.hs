@@ -23,9 +23,11 @@ import Data.Maybe
 import FeatureTableEditor
 import LexiconEditor
 import GrammarEditor
+import LearnerControls
+import GtkUtils
 
 ipaft :: FeatureTable String
-ipaft = fromJust (csvToFeatureTable id $(embedStringFile "./app/ft-ipa.csv"))
+ipaft = fromJust (csvToFeatureTable id $(embedStringFile "../features-fiero.csv"))
 
 css :: String
 css = [r|
@@ -47,15 +49,15 @@ css = [r|
 |]
 
 main :: IO ()
-main = runNowGTK $ mdo
+main = runNowGTK $ do
     -- example gtk app
     -- initialization code
     window <- sync $ windowNew
-    (fteditor, dynft) <- createEditableFT (Just window) ipaft
-    (lexeditor, dynlex) <- createEditableLexicon (Just window) (fmap segsFromFt dynft) emptyEs
-    (grammareditor, dynGrammar) <- createLoadableGrammar (Just window) (fmap (M.keysSet . featLookup) dynft) emptyEs
 
-    fmat <- displayDynFeatureTable dynft
+    rec (fteditor, dynft) <- createEditableFT (Just window) ipaft
+        (lexeditor, dynlex) <- createEditableLexicon (Just window) (fmap segsFromFt dynft) lexout
+        (grammareditor, dyngrammar) <- createLoadableGrammar (Just window) (fmap (M.keysSet . featLookup) dynft) grammarout
+        (controls,lexout,grammarout) <- createPhonotacticLearnerWidget dynft dynlex dyngrammar
 
     sync $ do
         sp <- cssProviderNew
@@ -63,18 +65,11 @@ main = runNowGTK $ mdo
         thescreen <- widgetGetScreen window
         styleContextAddProviderForScreen thescreen sp 600
 
-        panes1 <- hPanedNew
-        panes2 <- hPanedNew
-        panes3 <- vPanedNew
+        centerpanes <- createVPaned fteditor controls
+        rpanes <- createHPaned centerpanes grammareditor
+        lpanes <- createHPaned lexeditor rpanes
 
-        panedPack1 panes3 fteditor True False
-        panedPack2 panes3 fmat True False
-        panedPack1 panes2 panes3 True False
-        panedPack2 panes2 grammareditor True False
-        panedPack1 panes1 lexeditor True False
-        panedPack2 panes1 panes2 True False
-
-        containerAdd window panes1
+        containerAdd window lpanes
 
     sync $ window `on` deleteEvent $ liftIO mainQuit >> return False
 

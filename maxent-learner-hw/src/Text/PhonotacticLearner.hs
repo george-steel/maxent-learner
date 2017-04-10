@@ -11,7 +11,7 @@ Main learning algorithm for inferring granmmar from constraint set and lexicon. 
 -}
 
 module Text.PhonotacticLearner(
-    generateGrammarIO,
+    generateGrammarIO, generateGrammarIOCB
 ) where
 
 import Text.PhonotacticLearner.Util.Ring
@@ -54,20 +54,39 @@ generateGrammarIO :: forall clabel sigma . (Show clabel, Ix sigma, NFData sigma,
     -> [(clabel, ShortDFST sigma)] -- ^ List of candidate constraints. Labels must be unique. All DFSTs must share the same input bounds.
     -> [([sigma],Int)] -- ^ Corpus of sample words and their relative frequencies
     -> IO ([clabel], MulticountDFST sigma, Vec) -- ^ Computed grammar
-generateGrammarIO samplesize thresholds candidates wfs = do
+
+generateGrammarIO = generateGrammarIOCB (\_ _ -> return ()) (\_ _ -> return ())
+
+generateGrammarIOCB :: forall clabel sigma . (Show clabel, Ix sigma, NFData sigma, NFData clabel, Eq clabel)
+    => (Int -> Int -> IO ()) -- ^ callback for reporting progress
+    -> ([clabel] -> Vec -> IO ()) -- ^ callback for reporting grammar progress
+    -> Int -- ^ Monte Carlo sample size
+    -> [Double] -- ^ List of accuracy thresholds
+    -> [(clabel, ShortDFST sigma)] -- ^ List of candidate constraints. Labels must be unique. All DFSTs must share the same input bounds.
+    -> [([sigma],Int)] -- ^ Corpus of sample words and their relative frequencies
+    -> IO ([clabel], MulticountDFST sigma, Vec) -- ^ Computed grammar
+generateGrammarIOCB progresscb grammarcb samplesize thresholds candidates wfs = do
     let lwfs = sortLexicon wfs
         cbound = psegBounds . snd . head $ candidates
         blankdfa = nildfa cbound
         lendist = lengthCdf lwfs
         pwfs = packMultiText cbound (wordFreqs lwfs)
 
-    hashctr :: IORef Int <- newIORef 0
-    let mark500 = do
-            c <- readIORef hashctr
+    passctr :: IORef Int <- newIORef 0
+    candctr :: IORef Int <- newIORef 0
+    let markpass = do
+            modifyIORef' passctr (+1)
+            writeIORef candctr 0
+            p <- readIORef passctr
+            progresscb p 0
+        markcand = do
+            modifyIORef' candctr (+1)
+            c <- readIORef candctr
             when (c `mod` 500 == 0) $ do
+                p <- readIORef passctr
                 hPutStr stderr "#"
                 hFlush stderr
-            modifyIORef' hashctr (+1)
+                progresscb p c
 
     currentGrammar :: IORef ([clabel], MulticountDFST sigma, Vec) <- newIORef ([],pruneAndPack blankdfa ,zero)
 
@@ -81,10 +100,11 @@ generateGrammarIO samplesize thresholds candidates wfs = do
 
     handle stopsigint $ do
         forM_ thresholds $ \accuracy -> do
+            markpass
             putStrLn $ "\n\n\nStarting pass with threshold " ++ showFFloat (Just 3) accuracy ""
             writeIORef currentSalad =<< genSalad
             forM_ candidates $ \(cl,cdfa) -> do
-                mark500
+                markcand
                 (grammar, dfa, weights) <- readIORef currentGrammar
                 salad <- readIORef currentSalad
                 let o = fromIntegral $ transducePackedShort cdfa pwfs
@@ -103,6 +123,7 @@ generateGrammarIO samplesize thresholds candidates wfs = do
                     hPutStrLn stderr ""
                     putStrLn $ "Recalculated weights: " ++ showFVec (Just 2) newweights
                     atomicWriteIORef currentGrammar . force $ (newgrammar, newdfa, newweights)
+                    grammarcb newgrammar newweights
                     writeIORef currentSalad =<< genSalad
         putStrLn "\n\n\nAll Pases Complete."
 
