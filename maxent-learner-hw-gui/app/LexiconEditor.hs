@@ -24,7 +24,6 @@ import qualified Data.Map.Lazy as M
 import qualified Data.Set as S
 import Control.DeepSeq
 import Text.Read (readMaybe)
-import GtkUtils
 
 default(T.Text)
 
@@ -88,28 +87,22 @@ createEditableLexicon :: Maybe Window -> Behavior (S.Set String) -> EvStream [Le
 createEditableLexicon transwin currentsegs extreplace = do
     vb <- sync $ vBoxNew False 2
     editor <- sync treeViewNew
-    sync $ do
-        scr <- scrolledWindowNew Nothing Nothing
-        scrolledWindowDisableOverlay scr
-        fr <- frameNew
-        set fr [frameShadowType := ShadowIn ]
-        containerAdd scr editor
-        containerAdd fr scr
-        boxPackStart vb fr PackGrow 0
 
     (addButton,addPressed) <- createButton (Just "list-add") Nothing
     (delButton,delPressed) <- createButton (Just "list-remove") Nothing
     (loadListButton, loadListPressed) <- createButton (Just "document-open") (Just "Load Lexicon")
     (loadTextButton, loadTextPressed) <- createButton (Just "document-open") (Just "Collate Text")
     (saveButton, savePressed) <- createButton (Just "document-save") (Just "Save Lexicon")
-    bar <- sync . createHBox $ do
-        bpack addButton
-        bpack delButton
-        bspacer
-        bpack loadListButton
-        bpack loadTextButton
-        bpack saveButton
-    sync $ boxPackStart vb bar PackNatural 0
+
+    vb <- createVBox 2 $ do
+        bstretch =<< createFrame ShadowIn =<< createScrolledWindow editor
+        bpack <=< createHBox 2 $ do
+            bpack addButton
+            bpack delButton
+            bspacer
+            bpack loadListButton
+            bpack loadTextButton
+            bpack saveButton
 
     let segsChanged = toChanges currentsegs
     (modelChanged, changeModel) <- callbackStream

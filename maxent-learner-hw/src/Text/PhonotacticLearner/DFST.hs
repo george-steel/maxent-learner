@@ -575,8 +575,8 @@ instance NFData GlobReps where
 type SegSet sigma = UArray sigma Bool
 
 -- | Glob of segment lists, nore generalized version of ngrams allowing for repeated classes as well as single ones. The two boolean parameters restrict the glob to match a prefixes or suffixes only.
-data ListGlob sigma = ListGlob Bool -- Is restricted to string start
-                               Bool -- Is restricted to string end
+data ListGlob sigma = ListGlob {-# UNPACK #-} !Bool -- Is restricted to string start
+                               {-# UNPACK #-} !Bool -- Is restricted to string end
                                [(GlobReps, SegSet sigma)] -- List of character sets and their quantifiers.
                                deriving (Eq, Ord)
 

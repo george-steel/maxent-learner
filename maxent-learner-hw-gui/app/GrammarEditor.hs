@@ -21,7 +21,6 @@ import qualified Data.Set as S
 import Data.Array.IArray
 import Control.DeepSeq
 import Text.Read (readMaybe)
-import GtkUtils
 
 default (T.Text)
 
@@ -45,37 +44,22 @@ createLoadableGrammar transwin validsegs extreplace = do
             Just False -> "Invalid Features Detected"
             Nothing -> "No Grammar Loaded"
 
-    lenlabel <- createLabel lendesc
-    validlabel <- createLabel validdesc
-    tv <- sync textViewNew
-    buf <- sync $ textBufferNew Nothing
-    do
-        i <- sample ruledesc
-        sync $ set buf [textBufferText := i]
-        (e,cb) <- callback
-        sync $ on tv unrealize ( cb ())
-        let updates = toChanges ruledesc `beforeEs` e
-        callIOStream (\x -> set buf [textBufferText := x]) updates
-    -- setAttr textBufferText buf ruledesc
-
-    vb <- sync $ vBoxNew False 2
-    bar <- sync $ hBoxNew False 0
+    lenlabel <- createLabelDisplay lendesc
+    validlabel <- createLabelDisplay validdesc
+    tv <- createTextViewDisplay ruledesc
 
     (loadButton, loadPressed) <- createButton (Just "document-open") (Just "Load Grammar")
     (saveButton, savePressed) <- createButton (Just "document-save") (Just "Save Grammar")
     setAttr widgetSensitive saveButton (fmap isJust currentGrammar)
 
-    sync $ do
-        set lenlabel [labelWrap := True, miscXalign := 0]
-        set tv [textViewBuffer := buf, textViewEditable := False]
-        scr <- scrolledWindowNew Nothing Nothing
-        containerAdd scr tv
-        boxPackStart bar validlabel PackGrow 0
-        boxPackStart bar loadButton PackNatural 0
-        boxPackStart bar saveButton PackNatural 0
-        boxPackStart vb lenlabel PackNatural 0
-        boxPackStart vb scr PackGrow 0
-        boxPackStart vb bar PackNatural 0
+    vb <- createVBox 2 $ do
+        bpack lenlabel
+        bstretch =<< createScrolledWindow tv
+        bpack <=< createHBox 2 $ do
+            bpack validlabel
+            bspacer
+            bpack loadButton
+            bpack saveButton
 
     txtfilter <- sync fileFilterNew
     allfilter <- sync fileFilterNew

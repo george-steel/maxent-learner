@@ -164,11 +164,12 @@ readSrLexicon ft seg text = do
 --------------------------------------------------------------------------------
 
 -- | Representation of a natural class as a list of features and their states. Can ahso handle inverted classes.
-data NaturalClass = NClass { isInverted :: Bool
+data NaturalClass = NClass { isInverted :: {-# UNPACK #-} !Bool
                            , featureList :: [(FeatureState, T.Text)]
                            } deriving (Eq, Ord)
+
 instance NFData NaturalClass where
-    rnf c@(NClass b fs) = b `seq` rnf fs
+    rnf (NClass b fs) = b `seq` rnf fs
 
 -- | Uses SPE format
 instance Show NaturalClass where
@@ -211,7 +212,7 @@ classToSeglist ft (NClass isNegated cls) = force $ fnArray (srBounds ft) (\c -> 
             return (s,fi)
 
 -- | Globs using 'NaturalClass' instead of 'SegSet'
-data ClassGlob = ClassGlob Bool Bool [(GlobReps, NaturalClass)] deriving (Eq, Ord)
+data ClassGlob = ClassGlob {-# UNPACK #-} !Bool {-# UNPACK #-} !Bool [(GlobReps, NaturalClass)] deriving (Eq, Ord)
 instance NFData ClassGlob where
     rnf (ClassGlob isinit isfin gparts) = isinit `seq` isfin `seq` rnf gparts
 

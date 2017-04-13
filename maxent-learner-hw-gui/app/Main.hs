@@ -8,6 +8,7 @@ import Graphics.UI.Gtk.General.StyleContext
 import Graphics.UI.Gtk.Abstract.Widget
 import Control.FRPNow
 import Control.FRPNow.GTK
+import Control.FRPNow.GTK.MissingFFI
 import Control.Monad
 import Control.Applicative
 import Control.Concurrent
@@ -24,7 +25,6 @@ import FeatureTableEditor
 import LexiconEditor
 import GrammarEditor
 import LearnerControls
-import GtkUtils
 
 ipaft :: FeatureTable String
 ipaft = fromJust (csvToFeatureTable id $(embedStringFile "../features-fiero.csv"))
@@ -65,9 +65,9 @@ main = runNowGTK $ do
         thescreen <- widgetGetScreen window
         styleContextAddProviderForScreen thescreen sp 600
 
-        centerpanes <- createVPaned fteditor controls
-        rpanes <- createHPaned centerpanes grammareditor
-        lpanes <- createHPaned lexeditor rpanes
+        centerpanes <- set' [panedWideHandle := True] =<< createVPaned fteditor controls
+        rpanes <- set' [panedWideHandle := True] =<< createHPaned centerpanes grammareditor
+        lpanes <- set' [panedWideHandle := True] =<< createHPaned lexeditor rpanes
 
         containerAdd window lpanes
 

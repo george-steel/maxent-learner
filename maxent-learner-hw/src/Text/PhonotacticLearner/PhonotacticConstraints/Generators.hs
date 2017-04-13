@@ -26,13 +26,15 @@ module Text.PhonotacticLearner.PhonotacticConstraints.Generators (
 
 import Text.PhonotacticLearner.PhonotacticConstraints
 import Text.PhonotacticLearner.DFST
+import Data.Bits
 import Data.List
 import Data.Array.IArray
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Set as S
 import Control.Monad
 import Control.DeepSeq
+import Control.Parallel
 
 data CandidateSettings = CandidateSettings {
     useEdges :: Bool,
@@ -54,7 +56,7 @@ candidateGrammar ft (CandidateSettings edges mtri mbroken) = ncls `seq` rnf cand
     candb = case mbroken of
         Nothing -> []
         Just broken -> ugLongDistance cls (coreClassesFromFeats ft broken)
-    candidates = join [cand1,cande1,cand2,cande2,cand3,candb]
+    candidates = cls `pseq` (rnf cande2 `par` rnf cand3 `par` rnf candb `par` join [cand1,cande1,cand2,cande2,cand3,candb])
     ncand = length candidates
 
 -- | Given a number n and a sequence, returns all subsewuences of length n.
@@ -63,23 +65,36 @@ ngrams  0  _       = [[]]
 ngrams  _  []      = []
 ngrams  n  (x:xs)  = fmap (x:) (ngrams (n-1) xs) ++ ngrams n xs
 
+segsetFromInteger :: (SegRef,SegRef) -> Integer -> SegSet SegRef
+segsetFromInteger b set = fnArray b (\(Seg i) -> testBit set i)
+
+
 -- | Enumerate all classes (and their inverses) to a certain number of features
 -- in descending order of the number of segments the uninverted class contains.
 -- Discards duplicates (having the same set of segments).
 --
 -- Each segment is returned as a tripple with the (negated for sorting) numbet of segments in the class, the class label, and the set of segments it contains.
 classesByGenerality :: FeatureTable sigma -> Int -> [(Int, (NaturalClass, SegSet SegRef))]
-classesByGenerality ft maxfeats = force $ fmap (\((ns, cs), c) -> (ns,(c,cs))) (M.assocs cls)
+classesByGenerality ft maxfeats = force . fmap prepout $ (M.assocs cls)
     where
-        cls = M.fromListWith (const id) $ do
+        prepout ((n, set), cls)= (n, (cls, segsetFromInteger b set))
+        b = (srBounds ft)
+        sr = range b
+        mask = foldl' (.|.) zeroBits [bit i | Seg i <- sr]
+        fsets = do
+            (fi,fn) <- assocs (featNames ft)
+            fs <- [FPlus, FMinus]
+            let fset = foldl' (.|.) 0 [bit i | s@(Seg i) <- sr, ftlook ft s fi == fs]
+            return ((fs,fn),fset)
+        cls = M.fromListWith (const id) . force $ do
             isInv <- [False,True]
             nf <- range (0, maxfeats)
-            fs <- ngrams nf (elems (featNames ft))
-            c <- fmap (NClass isInv) . forM fs $ \f -> [(FPlus,f), (FMinus,f)]
-            let cs = classToSeglist ft c
-            let ns = length . filter id . elems $ cs
-            guard (ns /= 0)
-            return ((negate ns, cs), c)
+            (fs,sets) <- fmap unzip (ngrams nf fsets)
+            let cls = NClass isInv fs
+                set = (if isInv then mask else 0) `xor` (foldl' (.&.) mask sets)
+                ns = popCount set
+            guard (set /= 0)
+            return ((negate ns, set), cls)
 
 coreClassesFromFeats :: FeatureTable sigma -> [T.Text] -> [(NaturalClass, SegSet SegRef)]
 coreClassesFromFeats ft feats = nubBy (\x y -> snd x == snd y) $ do
@@ -131,14 +146,15 @@ ugEdgeBigrams cls = fmap snd . sortOn fst . force $ do
 -- | Given a set of classes ansd a smaller subset, return a set of globs matching trigrams of classes from the set where at least one class is contained in the subset.  At most one class may be inverted.
 ugLimitedTrigrams :: [(Int, (NaturalClass, SegSet SegRef))] -> [(NaturalClass, SegSet SegRef)] -> [(ClassGlob, ListGlob SegRef)]
 ugLimitedTrigrams cls rcls = fmap snd . sortOn fst . force $ do
+    let rcls' = S.fromList (fmap fst rcls)
     (w1,(c1,l1)) <- cls
     (w2,(c2,l2)) <- cls
     (w,(c3,l3)) <- case () of
-         () | (c1,l1) `elem` rcls -> do
+         () | S.member c1 rcls' -> do
                 (w3,(c3',l3')) <- cls
                 guard (not (isInverted c2 && isInverted c3'))
                 return (w2+w3, (c3',l3'))
-            | (c2,l2) `elem` rcls -> do
+            | S.member c2 rcls' -> do
                 (w3,(c3',l3')) <- cls
                 guard (not (isInverted c1 && isInverted c3'))
                 return (w1+w3, (c3',l3'))

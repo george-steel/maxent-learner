@@ -9,6 +9,7 @@ module FeatureTableEditor (
 import Graphics.UI.Gtk
 import Control.FRPNow hiding (swap)
 import Control.FRPNow.GTK
+import Control.FRPNow.GTK.MissingFFI
 import Control.Monad
 import Control.Exception
 import Data.Tuple
@@ -19,7 +20,6 @@ import Data.Array.IArray
 import qualified Data.Map.Lazy as M
 import qualified Data.ByteString as B
 import Control.DeepSeq
-import GtkUtils
 
 default (T.Text)
 
@@ -117,15 +117,17 @@ loadFTfromFile fp = handle nothingOnIOError $ do
 
 createEditableFT :: Maybe Window -> FeatureTable String -> Now (VBox, Behavior (FeatureTable String))
 createEditableFT transwin initft = do
-    vb <- sync $ vBoxNew False 2
-    top <- sync stackNew
     editor <- sync treeViewNew
+    editor' <- createScrolledWindow editor
+    sync $ set editor' [scrolledWindowOverlay := False]
 
     (loadButton, loadPressed) <- createButton (Just "document-open") (Just "Load Table")
     (saveButton, savePressed) <- createButton (Just "document-save") (Just "Save Table")
     (addButton, addPressed) <- createButton (Just "list-add") Nothing
     (delButton, delPressed) <- createButton (Just "list-remove") Nothing
     (editButton, isEditing) <- createToggleButton (Just "accessories-text-editor") (Just "Edit Table") False
+    setAttr widgetSensitive addButton isEditing
+    setAttr widgetSensitive delButton isEditing
 
     (ftReplaced, replaceft) <- callbackStream
     (modelReplaced, replaceModel) <- callbackStream
@@ -138,30 +140,24 @@ createEditableFT transwin initft = do
 
     viewer <- displayDynFeatureTable currentft
 
+    bar <- createHBox 2 $ do
+        bpack addButton
+        bpack delButton
+        bspacer
+        bpack editButton
+        bpack loadButton
+        bpack saveButton
+
+
+    top <- sync stackNew
     sync $ do
-        bar <- hBoxNew False 2
-        spacer <- hBoxNew False 0
-        boxPackStart bar addButton PackNatural 0
-        boxPackStart bar delButton PackNatural 0
-        boxPackStart bar spacer PackGrow 10
-        boxPackStart bar editButton PackNatural 0
-        boxPackStart bar loadButton PackNatural 0
-        boxPackStart bar saveButton PackNatural 0
-
-        scr <- scrolledWindowNew Nothing Nothing
-        scrolledWindowDisableOverlay scr
-        fr <- frameNew
-        set fr [frameShadowType := ShadowIn ]
-        containerAdd scr editor
-
         stackAddNamed top viewer "False"
-        stackAddNamed top scr "True"
-        boxPackStart vb top PackGrow 0
-        boxPackStart vb bar PackNatural 0
-
+        stackAddNamed top editor' "True"
     setAttr stackVisibleChildName top (fmap show isEditing)
-    setAttr widgetSensitive addButton isEditing
-    setAttr widgetSensitive delButton isEditing
+
+    vb <- createVBox 2 $ do
+        bstretch =<< createFrame ShadowIn top
+        bpack bar
 
     csvfilter <- sync fileFilterNew
     allfilter <- sync fileFilterNew
@@ -252,8 +248,9 @@ displayFeatureMatrix ft = do
 displayDynFeatureTable :: Behavior (FeatureTable String) -> Now ScrolledWindow
 displayDynFeatureTable dynft = do
     initft <- sample dynft
-    let ftchanged = toChanges dynft
     scr <- sync $ scrolledWindowNew Nothing Nothing
+    done <- getUnrealize scr
+    let ftchanged = toChanges dynft `beforeEs` done
     initwidget <- sync $ displayFeatureMatrix initft
     sync $ scrolledWindowAddWithViewport scr initwidget
     Just vp' <- sync $ binGetChild scr

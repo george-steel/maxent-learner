@@ -32,6 +32,7 @@ library
                      , vector >= 0.10
                      , mtl >= 2.1 && < 2.3
                      , containers == 0.5.*
+                     , parallel == 3.2.*
                      , random == 1.1
                      , array >= 0.3 && < 0.6
                      , text == 1.2.*
