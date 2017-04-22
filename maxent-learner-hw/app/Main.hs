@@ -151,8 +151,7 @@ main = do
             lexdata <- readFile lexfile
             let lexlist = readlex ft segmenter lexdata
             when (null lexlist) (die "Invalid lexicon file")
-            let wfs = sortLexicon lexlist
-                singles = ugSingleClasses cls
+            let singles = ugSingleClasses cls
                 edges = if gedges then (ugEdgeClasses cls) else []
                 doubles = ugBigrams cls
                 edoubles = if gedges then (ugEdgeBigrams cls) else []
@@ -165,9 +164,9 @@ main = do
             putStrLn $ "Generated candidates with " ++ show (length cls) ++ " classes and " ++ show (length globs) ++ " globs, running DFA generation in parallel."
             let candidates = fmap (force . (id *** matchCounter)) globs `using` (parListChunk 1000 rdeepseq)
 
-            (grammar, dfa, weights) <- generateGrammarIO (samplesize args) thresh candidates lexlist
+            (lenarr, grammar, dfa, weights) <- generateGrammarIO (samplesize args) thresh candidates lexlist
 
-            let output = serGrammar (PhonoGrammar (lengthFreqs wfs) grammar weights)
+            let output = serGrammar (PhonoGrammar lenarr grammar weights)
 
             putStrLn "\n\n\n\n"
             T.putStrLn output

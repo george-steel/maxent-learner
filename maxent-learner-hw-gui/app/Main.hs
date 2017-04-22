@@ -57,7 +57,7 @@ main = runNowGTK $ do
     rec (fteditor, dynft) <- createEditableFT (Just window) ipaft
         (lexeditor, dynlex) <- createEditableLexicon (Just window) (fmap segsFromFt dynft) lexout
         (grammareditor, dyngrammar) <- createLoadableGrammar (Just window) (fmap (M.keysSet . featLookup) dynft) grammarout
-        (controls,lexout,grammarout) <- createPhonotacticLearnerWidget dynft dynlex dyngrammar
+        (controls,pbar,lexout,grammarout) <- createPhonotacticLearnerWidget dynft dynlex dyngrammar
 
     sync $ do
         sp <- cssProviderNew
@@ -65,11 +65,15 @@ main = runNowGTK $ do
         thescreen <- widgetGetScreen window
         styleContextAddProviderForScreen thescreen sp 600
 
-        centerpanes <- set' [panedWideHandle := True] =<< createVPaned fteditor controls
-        rpanes <- set' [panedWideHandle := True] =<< createHPaned centerpanes grammareditor
-        lpanes <- set' [panedWideHandle := True] =<< createHPaned lexeditor rpanes
+        centerpanes <- set' [panedWideHandle := False] =<< createVPaned controls fteditor
+        rpanes <- set' [panedWideHandle := False] =<< createHPaned centerpanes grammareditor
+        lpanes <- set' [panedWideHandle := False] =<< createHPaned lexeditor rpanes
+        box <- createVBox 0 $ do
+            bstretch lpanes
+            bpack =<< liftIO (vSeparatorNew)
+            bpack pbar
 
-        containerAdd window lpanes
+        containerAdd window box
 
     sync $ window `on` deleteEvent $ liftIO mainQuit >> return False
 

@@ -41,7 +41,7 @@ createLoadableGrammar transwin validsegs extreplace = do
             return $ fmap (\(PhonoGrammar _ g _) -> all allValid g) cg
         validdesc = ffor gvalid $ \case
             Just True -> ""
-            Just False -> "Invalid Features Detected"
+            Just False -> "Invalid Features Detected, will ignore"
             Nothing -> "No Grammar Loaded"
 
     lenlabel <- createLabelDisplay lendesc

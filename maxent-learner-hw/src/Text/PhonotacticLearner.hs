@@ -11,7 +11,7 @@ Main learning algorithm for inferring granmmar from constraint set and lexicon. 
 -}
 
 module Text.PhonotacticLearner(
-    generateGrammarIO, generateGrammarIOCB
+    generateGrammarIO, generateGrammarCB
 ) where
 
 import Text.PhonotacticLearner.Util.Ring
@@ -26,6 +26,8 @@ import Data.Ix
 import Numeric
 import Data.IORef
 import Data.List
+import Data.Foldable
+import Data.Array.IArray
 import System.IO
 import Control.Exception
 
@@ -53,23 +55,31 @@ generateGrammarIO :: forall clabel sigma . (Show clabel, Ix sigma, NFData sigma,
     -> [Double] -- ^ List of accuracy thresholds
     -> [(clabel, ShortDFST sigma)] -- ^ List of candidate constraints. Labels must be unique. All DFSTs must share the same input bounds.
     -> [([sigma],Int)] -- ^ Corpus of sample words and their relative frequencies
-    -> IO ([clabel], MulticountDFST sigma, Vec) -- ^ Computed grammar
+    -> IO (Array Length Int, [clabel], MulticountDFST sigma, Vec) -- ^ Computed grammar
 
-generateGrammarIO = generateGrammarIOCB (\_ _ -> return ()) (\_ _ -> return ())
+generateGrammarIO samplesize thresholds candidates wfs = do
+    let cbound = psegBounds . snd . head $ candidates
+        blankdfa = pruneAndPack (nildfa cbound)
+    grammarref <- newIORef (accumArray (+) 0 (0,0) [], [], blankdfa, zero)
+    let progresscb _ _ = return ()
+        grammarcb lenarr rules dfa ws = mask_ $ atomicWriteIORef grammarref (lenarr,rules,dfa,ws)
+    void (generateGrammarCB progresscb grammarcb samplesize thresholds candidates wfs) `catch` stopsigint
+    readIORef grammarref
 
-generateGrammarIOCB :: forall clabel sigma . (Show clabel, Ix sigma, NFData sigma, NFData clabel, Eq clabel)
+generateGrammarCB :: forall clabel sigma . (Show clabel, Ix sigma, NFData sigma, NFData clabel, Eq clabel)
     => (Int -> Int -> IO ()) -- ^ callback for reporting progress
-    -> ([clabel] -> Vec -> IO ()) -- ^ callback for reporting grammar progress
+    -> (Array Length Int -> [clabel] -> MulticountDFST sigma -> Vec -> IO ()) -- ^ callback for reporting grammar progress
     -> Int -- ^ Monte Carlo sample size
     -> [Double] -- ^ List of accuracy thresholds
     -> [(clabel, ShortDFST sigma)] -- ^ List of candidate constraints. Labels must be unique. All DFSTs must share the same input bounds.
     -> [([sigma],Int)] -- ^ Corpus of sample words and their relative frequencies
     -> IO ([clabel], MulticountDFST sigma, Vec) -- ^ Computed grammar
-generateGrammarIOCB progresscb grammarcb samplesize thresholds candidates wfs = do
+generateGrammarCB progresscb grammarcb samplesize thresholds candidates wfs = do
     let lwfs = sortLexicon wfs
         cbound = psegBounds . snd . head $ candidates
-        blankdfa = nildfa cbound
+        blankdfa = pruneAndPack (nildfa cbound)
         lendist = lengthCdf lwfs
+        lenarr = lengthFreqs lwfs
         pwfs = packMultiText cbound (wordFreqs lwfs)
 
     passctr :: IORef Int <- newIORef 0
@@ -87,44 +97,47 @@ generateGrammarIOCB progresscb grammarcb samplesize thresholds candidates wfs = 
                 hPutStr stderr "#"
                 hFlush stderr
                 progresscb p c
+        markprg = do
+            p <- readIORef passctr
+            c <- readIORef candctr
+            progresscb p c
 
-    currentGrammar :: IORef ([clabel], MulticountDFST sigma, Vec) <- newIORef ([],pruneAndPack blankdfa ,zero)
+    let genSalad :: MulticountDFST sigma -> Vec -> IO (PackedText sigma)
+        genSalad dfa weights = do
+            salad <- getStdRandom . runState $ sampleWordSalad (fmap (maxentProb weights) (unpackDFA dfa)) lendist samplesize
+            evaluate . packMultiText cbound . wordFreqs . sortLexicon . fmap (\x -> (x,1)) $ salad
 
-    let genSalad :: IO (PackedText sigma)
-        genSalad = do
-            (_,dfa,weights) <- readIORef currentGrammar
-            salad' <- getStdRandom . runState $ sampleWordSalad (fmap (maxentProb weights) (unpackDFA dfa)) lendist samplesize
-            return . packMultiText cbound . wordFreqs . sortLexicon . fmap (\x -> (x,1)) $ salad'
+        processcand :: Double -> (PackedText sigma, [clabel], MulticountDFST sigma, Vec) -> (clabel, ShortDFST sigma) -> IO (PackedText sigma, [clabel], MulticountDFST sigma, Vec)
+        processcand thresh grammar@(salad,rules,dfa,ws) (cl,cdfa) = do
+            markcand
+            let o = fromIntegral $ transducePackedShort cdfa pwfs
+                o' = fromIntegral $ transducePackedShort cdfa salad
+                e = o' * fromIntegral (totalWords lwfs) / fromIntegral samplesize
+            score <- evaluate $ upperConfidenceOE o e
+            if score < thresh && cl `notElem` rules then do
+                markprg
+                hPutStrLn stderr ""
+                putStrLn $ "\nSelected Constraint " ++ show cl ++  " (score=" ++ showFFloat (Just 4) score [] ++ ", o=" ++ showFFloat (Just 1) o [] ++ ", e=" ++ showFFloat (Just 1) e [] ++ ")."
 
-    currentSalad <- newIORef undefined
+                let rules' = cl:rules
+                dfa' <- evaluate . pruneAndPack $ rawIntersection consMC (unpackDFA cdfa) (unpackDFA dfa)
+                putStrLn $ "New grammar has " ++ show (length rules') ++ " constraints and " ++ show (numStates dfa') ++ " states."
+                ws' <- evaluate . force $ llpOptimizeWeights (lengthFreqs lwfs) pwfs dfa' (consVec 0 ws)
+                hPutStrLn stderr ""
+                putStrLn $ "Recalculated weights: " ++ showFVec (Just 2) ws'
+                grammarcb lenarr rules' dfa' ws'
+                salad' <- genSalad dfa' ws'
+                return (salad',rules',dfa',ws')
+            else return grammar
 
-    handle stopsigint $ do
-        forM_ thresholds $ \accuracy -> do
+        processpass :: (PackedText sigma, [clabel], MulticountDFST sigma, Vec) -> Double -> IO (PackedText sigma, [clabel], MulticountDFST sigma, Vec)
+        processpass grammar thresh = do
             markpass
-            putStrLn $ "\n\n\nStarting pass with threshold " ++ showFFloat (Just 3) accuracy ""
-            writeIORef currentSalad =<< genSalad
-            forM_ candidates $ \(cl,cdfa) -> do
-                markcand
-                (grammar, dfa, weights) <- readIORef currentGrammar
-                salad <- readIORef currentSalad
-                let o = fromIntegral $ transducePackedShort cdfa pwfs
-                    o' = fromIntegral $ transducePackedShort cdfa salad
-                    e = o' * fromIntegral (totalWords lwfs) / fromIntegral samplesize
-                    score = upperConfidenceOE o e
+            putStrLn $ "\n\n\nStarting pass with threshold " ++ showFFloat (Just 3) thresh ""
+            foldlM (processcand thresh) grammar candidates
 
-                when (score < accuracy && cl `notElem` grammar) $ do
-                    hPutStrLn stderr ""
-                    putStrLn $ "\nSelected Constraint " ++ show cl ++  " (score=" ++ showFFloat (Just 4) score [] ++ ", o=" ++ showFFloat (Just 1) o [] ++ ", e=" ++ showFFloat (Just 1) e [] ++ ")."
-                    let newgrammar = cl:grammar
-                        newdfa :: MulticountDFST sigma = pruneAndPack (rawIntersection consMC (unpackDFA cdfa) (unpackDFA dfa))
-                    putStrLn $ "New grammar has " ++ show (length newgrammar) ++ " constraints and " ++ show (numStates newdfa) ++ " states."
-                    let oldweights = consVec 0 weights
-                    newweights <- evaluate . force $ llpOptimizeWeights (lengthFreqs lwfs) pwfs newdfa oldweights
-                    hPutStrLn stderr ""
-                    putStrLn $ "Recalculated weights: " ++ showFVec (Just 2) newweights
-                    atomicWriteIORef currentGrammar . force $ (newgrammar, newdfa, newweights)
-                    grammarcb newgrammar newweights
-                    writeIORef currentSalad =<< genSalad
-        putStrLn "\n\n\nAll Pases Complete."
-
-    readIORef currentGrammar
+    initsalad <- genSalad blankdfa zero
+    let initgrammar = (initsalad,[],blankdfa,zero)
+    (_,finalrules,finaldfa,finalweights) <- foldlM processpass initgrammar thresholds
+    putStrLn "\n\n\nAll Pases Complete."
+    return (finalrules,finaldfa,finalweights)
