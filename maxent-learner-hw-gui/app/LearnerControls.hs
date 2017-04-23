@@ -57,35 +57,6 @@ chunkList n xs = let (y,ys) = splitAt n xs in y : chunkList n ys
 parListChunk :: (NFData a) => Int -> [a] -> [a]
 parListChunk n = join . parAhead . fmap force . chunkList n
 
-createHBoxHom :: (MonadIO m) => Int -> ReaderT HBox IO () -> m HBox
-createHBoxHom spacing filler = liftIO $ do
-    b <- hBoxNew True spacing
-    runReaderT filler b
-    return b
-
-mapBAsync :: (Eq a) => Event () -> b -> (a -> b) -> Behavior a -> Now (Behavior b, Behavior Bool)
-mapBAsync stop yinit f xb = do
-    xinit <- sample xb
-    let xchanged = toChanges xb `beforeEs` stop
-    (pendingSet, setPending) <- callbackStream
-    (yset, sety) <- callbackStream
-    pending <- sample $ fromChanges True (merge (False <$ yset) pendingSet)
-    q <- sync $ newMVar xinit
-    flip callStream xchanged $ \xs -> let
-        x = last xs
-        in sync $ tryTakeMVar q >> putMVar q x
-    sync . forkIO . forever $ do
-        x <- takeMVar q
-        setPending True
-        y <- evaluate (f x)
-        sety y
-        setPending False
-    yb <- sample $ fromChanges yinit yset
-    return (yb, pending)
-
-beforeE :: Event a -> Event () -> Behavior (Event a)
-beforeE ev cutoff = fmap join $ FRP.first (never <$ cutoff) (pure <$> ev)
-
 generateSalad :: (Double -> T.Text -> IO ()) -> FeatureTable String -> PhonoGrammar -> Int -> IO [LexRow]
 generateSalad progcb ft (PhonoGrammar lendist rules ws) n = do
     let nrules = length rules

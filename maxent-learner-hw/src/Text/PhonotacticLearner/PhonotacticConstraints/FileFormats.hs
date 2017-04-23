@@ -57,7 +57,7 @@ parseWordlist segs rawlist = do
     let (rawword : rest) = T.split (== '\t') line
         w = segmentFiero segs (T.unpack rawword)
         fr = fromMaybe 1 $ do
-            [f] <- return rest
+            [f] <- return (rest >>= T.words)
             readMaybe (T.unpack f)
     guard (w /= [])
     return $ LexRow w fr
