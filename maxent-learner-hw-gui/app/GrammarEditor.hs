@@ -24,6 +24,7 @@ import Data.Array.IArray
 import Control.DeepSeq
 import Text.Read (readMaybe)
 import Data.IORef
+import Numeric
 
 import qualified Graphics.Rendering.Cairo as C
 import Graphics.Rendering.Chart.Easy hiding (indices, set')
@@ -91,8 +92,8 @@ createLoadableGrammar transwin validsegs extreplace = do
     lenchartdisplay <- createChartWidget lenData lenChart
     validlabel <- createLabelDisplay validdesc
     (ruledisplay,_) <- createListDisplay rulefeed $ do
+        tvColumn "Weight" $ tvTextDisplay (\(_,w) -> T.pack (showFFloat (Just 2) w []))
         tvColumn "Constraint" $ tvShowDisplay fst
-        tvColumn "Weight" $ tvShowDisplay snd
 
     (loadButton, loadPressed) <- createButton (Just "document-open") (Just "Load Grammar")
     (saveButton, savePressed) <- createButton (Just "document-save") (Just "Save Grammar")

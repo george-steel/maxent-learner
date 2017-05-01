@@ -14,6 +14,7 @@ import Control.Applicative
 import Control.Concurrent
 import Control.Monad.Trans
 import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 import qualified Data.Map.Lazy as M
 import qualified Data.Set as S
 import Text.PhonotacticLearner.PhonotacticConstraints
@@ -25,9 +26,10 @@ import FeatureTableEditor
 import LexiconEditor
 import GrammarEditor
 import LearnerControls
+import System.IO
 
 ipaft :: FeatureTable String
-ipaft = fromJust (csvToFeatureTable id $(embedStringFile "../features-fiero.csv"))
+ipaft = fromJust . csvToFeatureTable id . T.unpack . T.decodeUtf8 $ $(embedFile "app/ft-ipa.csv")
 
 css :: String
 css = [r|
@@ -50,6 +52,8 @@ css = [r|
 
 main :: IO ()
 main = runNowGTK $ do
+    sync $ hSetEncoding stdout utf8
+    sync $ hSetBuffering stdout LineBuffering
     -- example gtk app
     -- initialization code
     window <- sync $ windowNew
