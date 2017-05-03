@@ -107,4 +107,4 @@ serGrammarRules grammar weights =
 
 serGrammar :: PhonoGrammar -> T.Text
 serGrammar (PhonoGrammar lendist grammar weights) =
-    "# Length Distribution:\n" <> (T.pack . show . assocs $ lendist) <> "\n\n# Rules:\n" <> serGrammarRules grammar weights
+    "# Length Distribution:\n" <> (T.pack . show . assocs $ lendist) <> "\n\n# Constraints:\n" <> serGrammarRules grammar weights

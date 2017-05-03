@@ -111,7 +111,7 @@ watchFtModel (segs, model) = do
     return $ fmap (rows2ft segs) dynrows
 
 loadFTfromFile :: FilePath -> IO (Maybe (FeatureTable String))
-loadFTfromFile fp = handle nothingOnIOError $ do
+loadFTfromFile fp = fmap join . checkIOError $ do
     bincsv <- B.readFile fp
     evaluate $ force . csvToFeatureTable id . T.unpack =<< either (const Nothing) Just (T.decodeUtf8' bincsv)
 
@@ -225,11 +225,11 @@ displayFeatureMatrix ft = do
     forM_ (assocs (segNames ft)) $ \(Seg n,s) -> do
         l <- labelNew (Just s)
         let oddclass = if odd n then ["oddcol"] else []
-        widgetAddClasses l $ ["segheader"] ++ oddclass
+        widgetAddClasses (["segheader"] ++ oddclass) l
         gridAttach g l n 0 1 1
     forM_ (assocs (featNames ft)) $ \(n,f) -> do
         l <- labelNew (Just f)
-        widgetAddClasses l ["featheader"]
+        widgetAddClasses ["featheader"] l
         set l [miscXalign := 0]
         gridAttach g l 0 n 1 1
     forM_ (assocs (featTable ft)) $ \((Seg s, f), fs) -> do
@@ -238,10 +238,10 @@ displayFeatureMatrix ft = do
             FMinus -> labelNew (Just "−")
             FOff -> do
                 l <- labelNew (Just "0")
-                widgetAddClasses l ["featzero"]
+                widgetAddClasses ["featzero"] l
                 return l
         let oddclass = if odd s then ["oddcol"] else []
-        widgetAddClasses l oddclass
+        widgetAddClasses oddclass l
         gridAttach g l s f 1 1
     return g
 

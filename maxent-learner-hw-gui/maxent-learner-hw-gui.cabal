@@ -35,7 +35,7 @@ executable phono-learner-hw-gui
                      , gtk3
                      , glib
                      , frpnow
-                     , frpnow-gtk3 == 0.2
+                     , frpnow-gtk3 == 0.2.0
                      , raw-strings-qq
                      , bytestring
                      , tuple
