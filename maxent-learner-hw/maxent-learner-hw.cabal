@@ -60,4 +60,4 @@ executable phono-learner-hw
 
 source-repository head
   type:     git
-  location: https://github.com/githubuser/maxent-learner
+  location: https://github.com/george-steel/maxent-learner
