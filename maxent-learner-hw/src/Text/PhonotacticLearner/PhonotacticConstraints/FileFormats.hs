@@ -1,4 +1,15 @@
 {-# LANGUAGE OverloadedStrings, ScopedTypeVariables, ParallelListComp #-}
+
+{-|
+Module: Text.PhonotacticLearner.PhonotacticConstraints.FileFormats
+Description: Generation of candidate constraint sets.
+Copyright: © 2016-2017 George Steel and Peter Jurgec
+License: GPL-2+
+Maintainer: george.steel@gmail.com
+
+Functions for saving and loading lexicons and 'ClassGlob' constraint grammars in standard formats.
+-}
+
 module Text.PhonotacticLearner.PhonotacticConstraints.FileFormats where
 
 import Control.Monad
@@ -48,9 +59,11 @@ joinFiero allsegs = go where
                           then x ++ ('\'' : go xs)
                           else x ++ go xs
 
+-- | Structure for reperesenting lexicon entries
+data LexRow = LexRow [String] Int
 
-data LexRow = LexRow {word :: [String], freq :: Int}
-
+-- | Parse a lexicon from a file. Segmentation of a word uses fiero rules (which will also decode space-separated segments and single-character segments).
+-- Words may optionally be followed by a tab character and an integer indicating frequency (1 by default).
 parseWordlist :: S.Set String -> T.Text -> [LexRow]
 parseWordlist segs rawlist = do
     line <- T.lines rawlist
@@ -62,6 +75,7 @@ parseWordlist segs rawlist = do
     guard (w /= [])
     return $ LexRow w fr
 
+-- | Collate a list of words and frequencies from raw phonetic text.
 collateWordlist :: S.Set String -> T.Text -> [LexRow]
 collateWordlist segs rawtext = fmap (uncurry LexRow) . M.assocs . M.fromListWith (+) $ do
     rawword <- T.words rawtext
@@ -69,22 +83,32 @@ collateWordlist segs rawtext = fmap (uncurry LexRow) . M.assocs . M.fromListWith
     guard (w /= [])
     return (w, 1)
 
+-- | Serializes a list of words and frequerncies to a string for decoding with 'parseWordlist'. Connects segments using Fiero rules.
 serWordlist :: S.Set String -> [LexRow] -> T.Text
-serWordlist segs = T.unlines . fmap (T.pack . showRow) where
-    showRow (LexRow _ n) | n <= 0 = ""
-    showRow (LexRow w 1) = joinFiero segs w
-    showRow (LexRow w n) = joinFiero segs w ++ "\t" ++ show n
+serWordlist segs = T.unlines . mapMaybe showRow where
+    showRow (LexRow _ n) | n <= 0 = Nothing
+    showRow (LexRow w 1) = Just . T.pack $ joinFiero segs w
+    showRow (LexRow w n) = Just . T.pack $ joinFiero segs w ++ "\t" ++ show n
 
+-- | Serializes a list of words and frequerncies to a string for decoding with 'parseWordlist'. Puts spaces between segments.
+serWordlistSpaced :: [LexRow] -> T.Text
+serWordlistSpaced = T.unlines . mapMaybe showRow where
+    showRow (LexRow _ n) | n <= 0 = Nothing
+    showRow (LexRow w 1) = Just . T.pack $ unwords w
+    showRow (LexRow w n) = Just . T.pack $ unwords w ++ "\t" ++ show n
 
+-- | Reperesentation of a 'ClassGlob' grammar.
 data PhonoGrammar = PhonoGrammar {
-    lengthDist :: (Array Length Int),
-    constraintSet :: [ClassGlob],
-    weightSet :: Vec
+    lengthDist :: (Array Length Int), -- ^ Distribution of word lengths
+    constraintSet :: [ClassGlob], -- ^ Set of constraints
+    weightSet :: Vec -- ^ Set of weights in same order as constraints
 } deriving (Eq, Show)
 
 instance NFData PhonoGrammar where
     rnf (PhonoGrammar lendist grammar weights) = rnf lendist `seq` rnf grammar `seq` rnf weights
 
+-- | Parse a grammar from a file. Blank lines ans lines begining with # are ignored.
+-- The first regular line must contain a list of (Length,Int) pairs and subsequent lines must contain a weight followed by a ClassGlob.
 parseGrammar :: T.Text -> Maybe PhonoGrammar
 parseGrammar rawgrammar = do
     let noncomment l = not (T.null l) && (T.head l /= '#')
@@ -101,10 +125,12 @@ parseGrammar rawgrammar = do
     cs <- traverse readline (reverse glines)
     return $ PhonoGrammar lenarr (fmap fst cs) (vec (fmap snd cs))
 
+-- | Serialize a grammar without length distribution
 serGrammarRules :: [ClassGlob] -> Vec -> T.Text
 serGrammarRules grammar weights =
     (T.unlines . reverse) [T.pack $ showFFloat (Just 3) w "  " ++ show c | c <- grammar | w <- coords weights]
 
+-- | Serialize a grammar including length distribution
 serGrammar :: PhonoGrammar -> T.Text
 serGrammar (PhonoGrammar lendist grammar weights) =
     "# Length Distribution:\n" <> (T.pack . show . assocs $ lendist) <> "\n\n# Constraints:\n" <> serGrammarRules grammar weights

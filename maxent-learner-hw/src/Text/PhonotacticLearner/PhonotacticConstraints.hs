@@ -141,6 +141,7 @@ fschar FPlus = "+"
 fschar FMinus = "-"
 fschar FOff = "0"
 
+-- | Cave a modified feature table to CSV format
 featureTableToCsv :: (sigma -> String) -> FeatureTable sigma -> String
 featureTableToCsv writeSeg ft = writeCSV (header : body) where
     header = "" : fmap writeSeg (elems (segNames ft))

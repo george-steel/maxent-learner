@@ -66,6 +66,10 @@ generateGrammarIO samplesize thresholds candidates wfs = do
     void (generateGrammarCB progresscb grammarcb samplesize thresholds candidates wfs) `catch` stopsigint
     readIORef grammarref
 
+{-|
+Like 'generateGrammarIO' but calls callbacks to report progress and non-final grammars. Useful to run in the background and display intermediate results
+Does not catch SIGINT.
+-}
 generateGrammarCB :: forall clabel sigma . (Show clabel, Ix sigma, NFData sigma, NFData clabel, Eq clabel)
     => (Int -> Int -> IO ()) -- ^ callback for reporting progress
     -> (Array Length Int -> [clabel] -> MulticountDFST sigma -> Vec -> IO ()) -- ^ callback for reporting grammar progress

@@ -5,11 +5,9 @@ Copyright: © 2016-2017 George Steel and Peter Jurgec
 License: GPL-2+
 Maintainer: george.steel@gmail.com
 
-Functions for generating sets of candidate constraint sets.
-For efficiency, classes are reperesented as @('NaturalClass', 'SegSet' 'SegRef')@ pairs and
-constraints are output as @('ClassGlob', 'ListGlob' 'SegRef')@ pairs, avoiding the need for repeated conversions and copying of classes.
+Functions for generating sets of candidate constraint sets. For basic use, 'CandidateSettings' and 'CandidateGrammar' while the other functions provide more fine-grained control.
 
-The 'classesByGenreraity' function enumerates the classes defined by a feature table in a sensible order, removing duplicate descriptions of the same class. The ug functions then take these classes and then combine them imto globs in various ways.
+The 'classesByGenreraity' function enumerates the classes defined by a feature table in a sensible order, removing duplicate descriptions of the same class. The ug functions then take these classes and then combine them imto globs in various ways. For efficiency, classes are reperesented as @('NaturalClass', 'SegSet' 'SegRef')@ pairs and constraints are output as @('ClassGlob', 'ListGlob' 'SegRef')@ pairs, avoiding the need for repeated conversions and copying of classes.
 
 -}
 
@@ -36,12 +34,15 @@ import Control.Monad
 import Control.DeepSeq
 import Control.Parallel
 
+-- | Settings for grammar generation
 data CandidateSettings = CandidateSettings {
-    useEdges :: Bool,
-    useTrigrams :: Maybe [T.Text],
-    useBroken :: Maybe [T.Text]
+    useEdges :: Bool, -- ^ Allow single classes and bigrams restricted to word boundaries.
+    useTrigrams :: Maybe [T.Text], -- ^ Allows trigrams as long as at least one class is [] or [±x] where x is in the included list.
+    useBroken :: Maybe [T.Text] -- ^ Allows long-distance constraints of the form AB+C where A,C are classes and C = [] or [±x] with x in the list.
 } deriving (Eq, Show)
 
+-- | Generate a reasonable set of candidate constraints based single classes, bigrams, and the4 additionsl constraint types specified in the settings.
+-- First and second return values are the number of classes and candidates in the grammar, and the third is the set of candidates.
 candidateGrammar :: FeatureTable sigma -> CandidateSettings -> (Int , Int, [(ClassGlob, ListGlob SegRef)])
 candidateGrammar ft (CandidateSettings edges mtri mbroken) = ncls `seq` rnf candidates `seq` (ncls, ncand, candidates) where
     cls = classesByGenerality ft 3
@@ -112,7 +113,7 @@ ugSingleClasses cls = fmap snd . sortOn fst . force $ do
         lg = ListGlob False False [(GSingle,l)]
     return (w,(g,lg))
 
--- Given a set of classes, return a set of globs matching those globs at word boundaries. At most one class may be inverted.
+-- | Given a set of classes, return a set of globs matching those globs at word boundaries. At most one class may be inverted.
 ugEdgeClasses :: [(Int, (NaturalClass, SegSet SegRef))] -> [(ClassGlob, ListGlob SegRef)]
 ugEdgeClasses cls = fmap snd . sortOn fst . force $ do
     (w,(c,l)) <- cls

@@ -1,4 +1,4 @@
-{-# LANGUAGE ParallelListComp, TemplateHaskell, ScopedTypeVariables #-}
+{-# LANGUAGE ParallelListComp, TemplateHaskell, ScopedTypeVariables, DoAndIfThenElse #-}
 
 {-
 Command line interface for phonotactic learner
@@ -41,6 +41,7 @@ import Data.Array.IArray
 import Data.Maybe
 import Data.FileEmbed
 import Data.Char
+import Data.Foldable
 import Text.Read
 import Numeric
 import Control.Arrow
@@ -49,23 +50,27 @@ import Control.DeepSeq
 import Control.Exception
 import Control.Parallel.Strategies
 import System.Random
+import System.IO
+import System.Random.Shuffle
 
-data SegmentType = Chars | Words | Fiero deriving (Enum, Eq, Ord, Read, Show)
+data SaladOutput = SpacedLex | FieroLex | FieroShuffled deriving (Eq, Ord, Read, Show, Enum)
 
-data Command = Learn {
-        lexicon :: FilePath,
-        thresholds :: [Double],
-        useEdges :: Bool,
-        useTrigrams :: Maybe String,
-        useBroken :: Maybe String }
-    | GenSalad {
-        grammarfile :: FilePath }
+data Command = Learn
+        FilePath -- Lexicon file
+        Bool -- Collate lexicon
+        [Double] -- Thresholds for learner
+        Bool -- Use edges
+        (Maybe String) -- Trigram cores
+        (Maybe String) -- Long distance centers
+    | GenSalad
+        FilePath -- Grammar file
+        Bool -- space outputs
+        Bool  -- shuffle outputs
     deriving Show
 
 data ParsedArgs = ParsedArgs {
     cmd :: Command,
     ftable :: Maybe FilePath,
-    segtype :: SegmentType,
     samplesize :: Int,
     outfile :: Maybe FilePath
 } deriving (Show)
@@ -75,60 +80,32 @@ parseOpts :: Parser ParsedArgs
 parseOpts = ParsedArgs <$>
     hsubparser (command "learn" (info (Learn
             <$> strArgument (metavar "LEXICON")
+            <*> switch (long "collate" <> short 'c' <> help "Collate a lexicon from raw text, spaces separate words. When this is off, one ")
             <*> option auto (long "thresholds" <> metavar "THRESHOLDS" <> value [0.01, 0.1, 0.2, 0.3] <> help "thresholds to use for candidate selection (default is [0.01, 0.1, 0.2, 0.3]).")
-            <*> switch (long "edges" <> short 'e' <> help "Allow constraints involving word boundaries.")
+            <*> switch (long "edges" <> short 'e' <> help "Allow single classes and bigrams restricted to word boundaries.")
             <*> optional (strOption $ long "trigrams" <> short '3' <> metavar "COREFEATURES" <>
-                help "Allow trigram constraints where at least one class uses a single one of the following features (comma-separated).")
+                help "Allows trigrams as long as at least one class is [] or [±x] where x is in COREFEATURES (space separated in quotes).")
             <*> optional (strOption $ long "longdistance" <> short 'l' <> metavar "SKIPFEATURES" <>
-                help "Allow constraints with two classes separated by a run of characters possibly restricted to all having one of the following features.")
+                help "Allows long-distance constraints of the form AB+C where A,C are classes and C = [] or [±x] with x in SKIPFEATURES.")
             ) (fullDesc <> progDesc "Learn a phonotactic grammar from a given lexicon"))
-        <> command "gensalad" (info (GenSalad <$> strArgument (metavar "GRAMMAR"))
-            (fullDesc <> progDesc "Generate random words from an already-calculated grammar")))
-    <*> optional (option str $ long "featuretable" <> short 't' <> metavar "CSVFILE" <>
+        <> command "gibber" (info (GenSalad
+            <$> strArgument (metavar "GRAMMAR")
+            <*> switch (long "spaced" <> help "Separate segments with spaces")
+            <*> switch (long "shuffle" <> short 's' <> help "Shuffle generate output (sorted by default)")
+            ) (fullDesc <> progDesc "Generate a salad of random words from an already-calculated grammar")))
+    <*> optional (option str $ long "featuretable" <> short 'f' <> metavar "CSVFILE" <>
         help "Use the features and segment list from a feature table in CSV format (a table for IPA is used by default).")
-    <*> (flag' Chars (long "charsegs" <> short 'c' <> help "Use characters as segments (default).")
-        <|> flag' Words (long "wordsegs" <> short 'w' <> help "Separate segments by spaces.")
-        <|> flag' Fiero (long "fierosegs" <> short 'f' <> help "Parse segments by repeatedly taking the longest possible match and use ' to break up unintended digraphs (used for Fiero orthography).")
-        <|> pure Chars)
     <*> option auto (long "samples" <> short 'n' <> value 3000 <> help "Number of samples to use for salad generation.")
     <*> optional (strOption $ long "output" <> short 'o' <> metavar "OUTFILE" <> help "Record final output to OUTFILE as well as stdout.")
 
 opts = info (helper <*> parseOpts) (fullDesc <> progDesc "Automatically infer phonotactic grammars from text and apply them as probability distributions.")
 
 
-
-
 ipaft :: FeatureTable String
 ipaft = fromJust (csvToFeatureTable id $(embedStringFile "./app/ft-ipa.csv"))
 
-readlex :: FeatureTable String -> (String -> [String]) -> String -> [([SegRef],Int)]
-readlex ft seg text = do
-    line <- lines text
-    let (wt@(_:_),wf') = break (== '\t') line
-    n <- case (words wf') of
-            [] -> [1]
-            [wf] -> maybeToList $ readMaybe wf
-            _ -> []
-    return (segsToRefs ft (seg wt), n)
-
-
-prettyprintGrammar :: (Show clabel) => [clabel] -> Vec -> String
-prettyprintGrammar grammar weights = (unlines . reverse) [showFFloat (Just 2) w "  " ++ show c | c <- grammar | w <- coords weights]
-
-isNonComment :: String -> Bool
-isNonComment [] = False
-isNonComment "\n" = False
-isNonComment ('#':_) = False
-isNonComment _ = True
-
-restrictedClasses :: FeatureTable String -> String -> [(NaturalClass, SegSet SegRef)]
-restrictedClasses ft arg = fmap ((id &&& classToSeglist ft) . NClass False) $ [] : do
-    feat <- fmap T.pack (words arg)
-    Just _ <- return $ M.lookup feat (featLookup ft)
-    [[(FPlus, feat)], [(FMinus, feat)]]
-
-
 main = do
+    hSetEncoding stdout utf8
     args <- execParser opts
     putStrLn (show args)
     ft <- case ftable args of
@@ -142,32 +119,20 @@ main = do
             return ipaft
 
     case cmd args of
-        Learn lexfile thresh gedges gtris gbroken -> do
-            let segmenter = case segtype args of
-                    Words -> words
-                    Chars -> fmap return
-                    Fiero -> segmentFiero . S.fromList . elems . segNames $ ft
-                cls = force $ classesByGenerality ft 3
-            lexdata <- readFile lexfile
-            let lexlist = readlex ft segmenter lexdata
-            when (null lexlist) (die "Invalid lexicon file")
-            let singles = ugSingleClasses cls
-                edges = if gedges then (ugEdgeClasses cls) else []
-                doubles = ugBigrams cls
-                edoubles = if gedges then (ugEdgeBigrams cls) else []
-                triples = case gtris of Just rcls -> ugLimitedTrigrams cls (restrictedClasses ft rcls)
-                                        Nothing -> []
-                longdistance = case gbroken of Just rcls -> ugLongDistance cls (restrictedClasses ft rcls)
-                                               Nothing -> []
+        Learn lexfile docollate thresh edges tris broken -> do
+            rawlex <- fmap (T.decodeUtf8With T.lenientDecode) (B.readFile lexfile)
+            let segs = S.fromList . elems . segNames $ ft
+                parsedLex = (if docollate then collateWordlist else parseWordlist) segs rawlex
+                candsettings = CandidateSettings edges (fmap (T.words . T.pack) tris) (fmap (T.words . T.pack) broken)
+                cookedlex = fmap (\(LexRow w f) -> (segsToRefs ft w, f)) parsedLex
+            when (null cookedlex) (die "Invalid lexicon file")
+            (ncls, nglobs, globs) <- evaluate $ candidateGrammar ft candsettings
+            putStrLn $ "Generated candidates with " ++ show ncls ++ " classes and " ++ show nglobs ++ " globs, running DFA generation in parallel."
 
-            globs <- evaluate . force $ join [singles,edges,doubles,edoubles,triples,longdistance]
-            putStrLn $ "Generated candidates with " ++ show (length cls) ++ " classes and " ++ show (length globs) ++ " globs, running DFA generation in parallel."
             let candidates = fmap (force . (id *** matchCounter)) globs `using` (parListChunk 1000 rdeepseq)
-
-            (lenarr, grammar, dfa, weights) <- generateGrammarIO (samplesize args) thresh candidates lexlist
+            (lenarr, grammar, dfa, weights) <- generateGrammarIO (samplesize args) thresh candidates cookedlex
 
             let output = serGrammar (PhonoGrammar lenarr grammar weights)
-
             putStrLn "\n\n\n\n"
             T.putStrLn output
 
@@ -177,29 +142,39 @@ main = do
 
 
 
-        GenSalad gfile -> do
+        GenSalad gfile dospace doshuffle -> do
             rawgrammar <- fmap (T.decodeUtf8With T.lenientDecode) (B.readFile gfile)
-            Just (PhonoGrammar lendist rulelist weights) <- evaluate . force $ parseGrammar rawgrammar
+            Just (PhonoGrammar lendist rules ws) <- evaluate . force $ parseGrammar rawgrammar
 
-            let lencdf = massToCdf (fmap (second fromIntegral) (assocs lendist))
-                blankdfa = nildfa (srBounds ft)
-                dfa = foldr (\g t -> force $ dfaProduct consMC (unpackDFA . cgMatchCounter ft $ g) (force t)) blankdfa rulelist
-                unsegmenter = case segtype args of
-                    Words -> unwords
-                    Chars -> join
-                    Fiero -> joinFiero . S.fromList . elems . segNames $ ft
+            let nrules = length rules
+                lencdf = massToCdf (fmap (second fromIntegral) (assocs lendist))
+                blankdfa :: MulticountDFST SegRef
+                blankdfa = pruneAndPack . nildfa $ srBounds ft
+                addRule :: ClassGlob -> MulticountDFST SegRef -> IO (MulticountDFST SegRef)
+                addRule r g = do
+                    g' <- evaluate . pruneAndPack $ rawIntersection consMC (unpackDFA . cgMatchCounter ft $ r) (unpackDFA g)
+                    hPutStr stderr "#" >> hFlush stderr
+                    return g'
 
-            evaluate . force $ dfa
+            dfa <- foldrM addRule blankdfa rules
+            hPutStrLn stderr "\n" >> hFlush stderr
+            salad <- getStdRandom . runState $ sampleWordSalad (fmap (maxentProb ws) (unpackDFA dfa)) lencdf (samplesize args)
 
-            salad <- getStdRandom . runState $ sampleWordSalad (fmap (maxentProb weights) dfa) lencdf (samplesize args)
-
-            let output = unlines . fmap (unsegmenter . refsToSegs ft) $ salad
+            let segs = S.fromList . elems . segNames $ ft
+            output <- if doshuffle then do
+                salad' <- fmap (shuffle' salad (length salad)) newStdGen
+                let saladsegs = fmap (refsToSegs ft) salad'
+                    unseg = if dospace then unwords else joinFiero segs
+                return . T.unlines . fmap (T.pack . unseg) $ saladsegs
+            else return $ let
+                sortedsalad = wordFreqs . sortLexicon . fmap (\x -> (x,1)) $ salad
+                in (if dospace then serWordlistSpaced else serWordlist segs) . fmap (\(w,f) -> LexRow (refsToSegs ft w) f) $ sortedsalad
 
             putStrLn "\n\n\n\n"
-            putStrLn output
+            T.putStrLn output
 
             case outfile args of
-                Just outf -> writeFile outf output
+                Just outf -> B.writeFile outf (T.encodeUtf8 output)
                 Nothing -> return ()
 
             return ()

@@ -48,11 +48,11 @@ setLexContents editor segs initlist = do
     set wcell [cellTextEditable := True]
     cellLayoutPackStart wcol wcell True
     treeViewAppendColumn editor wcol
-    cellLayoutSetAttributes wcol wcell model $ \row -> [cellText := joinFiero segs (word row)]
+    cellLayoutSetAttributes wcol wcell model $ \(LexRow w _) -> [cellText := joinFiero segs w]
     on wcell edited $ \[i] rawword -> do
         let newword = segmentFiero segs rawword
-        row <- listStoreGetValue model i
-        when (word row /= newword) $ listStoreSetValue model i (row {word = newword})
+        LexRow w f <- listStoreGetValue model i
+        when (w /= newword) $ listStoreSetValue model i (LexRow newword f)
 
     adj <- adjustmentNew 1 1 10000 1 10 0
     fcol <- treeViewColumnNew
@@ -61,11 +61,11 @@ setLexContents editor segs initlist = do
     set fcell [cellTextEditable := True, cellRendererSpinAdjustment := adj]
     cellLayoutPackStart fcol fcell True
     treeViewAppendColumn editor fcol
-    cellLayoutSetAttributes fcol fcell model $ \row -> [cellText := show (freq row)]
+    cellLayoutSetAttributes fcol fcell model $ \(LexRow _ f) -> [cellText := show f]
     on fcell edited $ \[i] newval -> do
-        row <- listStoreGetValue model i
+        LexRow w f <- listStoreGetValue model i
         case readMaybe newval of
-            Just newfreq | (freq row /= newfreq) -> listStoreSetValue model i (row {freq = newfreq})
+            Just newfreq | (f /= newfreq) -> listStoreSetValue model i (LexRow w newfreq)
             _ -> return ()
 
     return model

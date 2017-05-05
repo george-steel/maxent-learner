@@ -1,8 +1,8 @@
 # Maxent Phonotactic Learner
 
-A tool for automatically inferring phonotactic grammars from a lexicon and using those grammars to generate random text, based on Hayes and Wilson's [A Maximum Entropy Model of Phonotactics and Phonotactic Learning](http://www.linguistics.ucla.edu/people/hayes/Phonotactics/Index.htm).  This package provides functionality both as a Haskell library and as a command line tool.
+A tool for automatically inferring phonotactic grammars from a lexicon and using those grammars to generate random text, based on Hayes and Wilson's [A Maximum Entropy Model of Phonotactics and Phonotactic Learning](http://www.linguistics.ucla.edu/people/hayes/Phonotactics/Index.htm).  This package provides functionality both as a Haskell library, a command line tool (`phono-learner-hw`), and a GTK-based GUI (`phono-learner-hw-gui`). The library may be useful if you wish to use a custom set of candidate constraints beyond the generators offered by the two interfaces.
 
-To compile this package, run `stack build` in the root of this repository. Run `stack haddock` to build the library documentation. The library may be useful if you wish to use a custom set of candidate constraints beyond the generators offered by the command line tool.
+To compile this package, run `stack build` in the root of this repository (for just the command line tool, run `stach build maxent-learner-hw`). Compiling the GUI requires GTK3 to be installed (on windows use `pacman` in the msys2 environment that comes with stack) and if initializing a new stack snapshot, will you will need to run `stack install ghc2hs-buildtools` before compilation of all dependencies can succeed.
 
 ## Command line usage
 
@@ -10,39 +10,52 @@ The command line tool (`phono-learner-hw`) has two commands: `learn`, which infe
 
 The command line works as follows:
 
-    phono-learner-hw COMMAND [-t|--featuretable CSVFILE] ([-c|--charsegs] | [-w|--wordsegs] | [--fierrosegs]) [-n|--samples ARG] [-o|--output OUTFILE]
+    phono-learner-hw COMMAND [-t|--featuretable CSVFILE] [-n|--samples ARG] [-o|--output OUTFILE]
 
 
-| Option | Description |
-| --- | --- |
-| -t, --featuretable *CSVFILE* | Use the features and segment list from a feature table in CSV format (a table for IPA is used by default). |
-| -c, --charsegs             | Use characters as segments (default). |
-| -w, --wordsegs             | Separate segments by spaces. |
-| --fierosegs              | Parse segments by repeatedly taking the longest possible match and use ' to break up unintended digraphs (used for Fiero orthography). |
-| -n, --samples *N*          | Number of samples to use for salad generation. |
+| Option                       | Description |
+| ---                          | --- |
+| -f, --featuretable *CSVFILE* | Use the features and segment list from a feature table in CSV format (a table for IPA is used by default). |
+| -n, --samples *N*            | Number of samples to use for salad generation. |
 | -o, --output *OUTFILE*       | Record final output to OUTFILE as well as stdout. |
 
     hw-learner learn LEXICON [--thresholds THRESHOLDS] [-f|--freqs] [-e|--edges] [-3|--trigrams COREFEATURES] [-l|--longdistance SKIPFEATURES] [GLOBALOPTIONS]
 
-| Option | Description |
-| --- | --- |
-| --thresholds *THRESHOLDS* | thresholds to use for candidate selection (default is `[0.01, 0.1, 0.2, 0.3]``). |
-| -f,--freqs              | Lexicon file contains word frequencies.
-| -e,--edges              | Allow constraints involving word boundaries.
-| -3,--trigrams *COREFEATURES* | Allow trigram constraints where at least one class uses a single one of the following features (space separated in quotes). |
-| -l,--longdistance SKIPFEATURES  |Allow constraints with two classes separated by a run of characters possibly restricted to all having one of the following features.
+| Option                            | Description |
+| ---                               | --- |
+| -f, --freqs                       | Lexicon file contains word frequencies. |
+| --thresholds *THRESHOLDS*         | Thresholds to use for candidate selection (default is `[0.01, 0.1, 0.2, 0.3]`). |
+| -e, --edges                       | Allow single classes and bigrams restricted to word boundaries. |
+| -3, --trigrams *COREFEATURES*     | Allows trigrams as long as at least one class is [] or [±x] where x is in *COREFEATURES* (space separated in quotes). |
+| -l, --longdistance *SKIPFEATURES* | Allows long-distance constraints of the form AB+C where A,C are classes and C = [] or [±x] with x in *SKIPFEATURES*. |
 
-    hw-learner gensalad GRAMMAR [GLOBALOPTIONS]
+    hw-learner gibber GRAMMAR [GLOBALOPTIONS]
+
+| Option        | Description |
+| ---           | --- |
+| --spaced      | Separate segments with spaces in output. |
+| -s, --shuffle | Shuffle generated output (sorted by default). |
+
 
 ### Example usage
 
 The following two command calculates a grammar using Hayes and Wilson's Shona test data using their selection of trigram restrictions and then generate random text using it.
 
-
-
     phono-learner-hw learn ShonaLearningData.txt -f -e -3 "syllabic consonantal sonorant" -t ShonaFeatures.csv -w -o shonalongdistance.txt
     phono-learner-hw gensalad ShonaGrammar.txt -t ShonaFeatures.csv -w -o ShonaSalad.txt
 
+
+## Lexicon format
+
+If the collate option is used, raw phonetic text may be used, where whitespace separates words and punctuation is ignored (although it will separate segments if multi-character segments are defined). If the option is not used, words must be on their own lines and whitespace is ignored (but may be used to separate segments). Each word may optionally be followed by a tab character and an integer indicating its frequency.
+
+## Grammar format
+
+As these are auto-generated, they should not need to be edited manually.
+
+Blank lines ans lines begining with # are ignored.
+The first regular line must contain a length distribution (a list of (Length,Int) pairs).
+Subsequent lines contain a weight and a rule separated by a space. Rules are reperesented as a sequence of classes with `+` and `*` for repetition, `¬` for inversion, and `#` to indicate the presence of a word boundary.
 
 
 ## Feature Table Format
