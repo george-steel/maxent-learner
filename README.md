@@ -2,7 +2,7 @@
 
 A tool for automatically inferring phonotactic grammars from a lexicon and using those grammars to generate random text, based on Hayes and Wilson's [A Maximum Entropy Model of Phonotactics and Phonotactic Learning](http://www.linguistics.ucla.edu/people/hayes/Phonotactics/Index.htm).  This package provides functionality both as a Haskell library, a command line tool (`phono-learner-hw`), and a GTK-based GUI (`phono-learner-hw-gui`). The library may be useful if you wish to use a custom set of candidate constraints beyond the generators offered by the two interfaces.
 
-To compile this package, run `stack build` in the root of this repository (for just the command line tool, run `stach build maxent-learner-hw`). Compiling the GUI requires GTK3 to be installed (on windows use `pacman` in the msys2 environment that comes with stack) and if initializing a new stack snapshot, will you will need to run `stack install ghc2hs-buildtools` before compilation of all dependencies can succeed.
+To compile this package, run `stack build` in the root of this repository (for just the command line tool, run `stack build maxent-learner-hw`). Compiling the GUI requires GTK3 to be installed (on windows use `pacman` in the msys2 environment that comes with stack) and if initializing a new stack snapshot, will you will need to run `stack install ghc2hs-buildtools` before compilation of all dependencies can succeed.
 
 ## Command line usage
 

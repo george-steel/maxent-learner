@@ -13,6 +13,8 @@ import Control.FRPNow.GTK.MissingFFI
 import Control.Monad
 import Control.Exception
 import Data.Tuple
+import Data.List
+import Data.Maybe
 import Text.PhonotacticLearner.PhonotacticConstraints
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
@@ -57,6 +59,22 @@ rows2ft segs rows = FeatureTable ftarr fnames segs flook slook where
     slook = M.fromList (fmap swap (assocs segs))
     flook = M.fromList (fmap swap (assocs fnames))
 
+resegft :: [String] -> FeatureTable String -> FeatureTable String
+resegft segs oldft = FeatureTable ftarr fnames segsarr flook slook where
+    fnames = featNames oldft
+    flook = featLookup oldft
+    (fa,fb) = bounds fnames
+    uniqsegs = nub segs
+    nsegs = length uniqsegs
+    segsarr = listArray (Seg 1, Seg nsegs) uniqsegs
+    slook = M.fromList (fmap swap (assocs segsarr))
+    ftarr = array ((Seg 1,fa), (Seg nsegs,fb)) $ do
+        f <- indices fnames
+        (sr,s) <- assocs segsarr
+        let fs = fromMaybe FOff $ do
+                sr' <- M.lookup s (segLookup oldft)
+                return $ ftlook oldft sr' f
+        return ((sr,f),fs)
 
 setFTContents :: TreeView -> FeatureTable String -> IO (Array SegRef String, ListStore FTRow)
 setFTContents editor newft = do
@@ -115,6 +133,32 @@ loadFTfromFile fp = fmap join . checkIOError $ do
     bincsv <- B.readFile fp
     evaluate $ force . csvToFeatureTable id . T.unpack =<< either (const Nothing) Just (T.decodeUtf8' bincsv)
 
+runTextDialog :: Maybe Window -> T.Text -> T.Text -> Now (Event (Maybe T.Text))
+runTextDialog transwin q defa = do
+    (retev, cb) <- callback
+    dia <- sync $ dialogNew
+    ent <- sync $ entryNew
+    sync $ do
+        case transwin of
+            Just win -> set dia [windowTransientFor := win]
+            Nothing -> return ()
+        dialogAddButton dia "gtk-ok" ResponseOk
+        dialogAddButton dia "gtk-cancel" ResponseCancel
+        ca <- castToBox <$> dialogGetContentArea dia
+        entrySetText ent defa
+        lbl <- createLabel q
+        boxPackStart ca lbl PackGrow 0
+        boxPackStart ca ent PackNatural 0
+        on dia response $ \resp -> do
+            case resp of
+                ResponseOk -> do
+                    txt <- entryGetText ent
+                    cb (Just txt)
+                _ -> cb Nothing
+            widgetDestroy dia
+        widgetShowAll dia
+    return retev
+
 createEditableFT :: Maybe Window -> FeatureTable String -> Now (VBox, Behavior (FeatureTable String))
 createEditableFT transwin initft = do
     editor <- sync treeViewNew
@@ -126,6 +170,7 @@ createEditableFT transwin initft = do
     (addButton, addPressed) <- createButton (Just "list-add") Nothing
     (delButton, delPressed) <- createButton (Just "list-remove") Nothing
     (editButton, isEditing) <- createToggleButton (Just "accessories-text-editor") (Just "Edit Table") False
+    (segButton, segPressed) <- createButton Nothing (Just "Change Segments")
     setAttr widgetSensitive addButton isEditing
     setAttr widgetSensitive delButton isEditing
 
@@ -140,15 +185,6 @@ createEditableFT transwin initft = do
 
     viewer <- displayDynFeatureTable currentft
 
-    bar <- createHBox 2 $ do
-        bpack addButton
-        bpack delButton
-        bspacer
-        bpack editButton
-        bpack loadButton
-        bpack saveButton
-
-
     top <- sync stackNew
     sync $ do
         stackAddNamed top viewer "False"
@@ -157,20 +193,28 @@ createEditableFT transwin initft = do
 
     vb <- createVBox 2 $ do
         bstretch =<< createFrame ShadowIn top
-        bpack bar
+        bpack <=< createHBox 2 $ do
+            bpack addButton
+            bpack delButton
+            bspacer
+            bpack segButton
+            bpack editButton
+            bpack loadButton
+            bpack saveButton
 
-    csvfilter <- sync fileFilterNew
+    {-csvfilter <- sync fileFilterNew
     allfilter <- sync fileFilterNew
     sync $ do
         fileFilterAddMimeType csvfilter "text/csv"
         fileFilterSetName csvfilter "CSV"
         fileFilterAddPattern allfilter "*"
         fileFilterSetName allfilter "All Files"
+    -}
 
     loadDialog <- sync $ fileChooserDialogNew (Just "Open Feature Table") transwin FileChooserActionOpen
         [("gtk-cancel", ResponseCancel), ("gtk-open", ResponseAccept)]
-    sync $ fileChooserAddFilter loadDialog csvfilter
-    sync $ fileChooserAddFilter loadDialog allfilter
+    --sync $ fileChooserAddFilter loadDialog csvfilter
+    --sync $ fileChooserAddFilter loadDialog allfilter
     flip callStream loadPressed $ \_ -> do
         filePicked <- runFileChooserDialog loadDialog
         emft <- planNow . ffor filePicked $ \case
@@ -186,8 +230,8 @@ createEditableFT transwin initft = do
 
     saveDialog <- sync $ fileChooserDialogNew (Just "Save Feature Table") transwin FileChooserActionSave
         [("gtk-cancel", ResponseCancel), ("gtk-save", ResponseAccept)]
-    sync $ fileChooserAddFilter saveDialog csvfilter
-    sync $ fileChooserAddFilter saveDialog allfilter
+    --sync $ fileChooserAddFilter saveDialog csvfilter
+    --sync $ fileChooserAddFilter saveDialog allfilter
     flip callStream savePressed $ \_  -> do
         savePicked <- runFileChooserDialog saveDialog
         planNow . ffor savePicked $ \case
@@ -201,6 +245,22 @@ createEditableFT transwin initft = do
                     putStrLn $ "Wrote Feature Table " ++ fn
                 return ()
         return ()
+
+    flip callStream segPressed $ \_ -> do
+        oldft <- sample currentft
+        let oldsegs = T.pack . unwords . elems . segNames $ oldft
+        enewsegs <- runTextDialog transwin "Enter a new set of segments." oldsegs
+        planNow . ffor enewsegs $ \case
+            Nothing -> return ()
+            Just newsegs -> let segs = words (T.unpack newsegs) in case segs of
+                [] -> return ()
+                _ -> sync $ do
+                    let newft = resegft segs oldft
+                    newmodel <- setFTContents editor newft
+                    replaceModel newmodel
+                    putStrLn "Segments Changed."
+        return ()
+
 
     flip callStream addPressed $ \_ -> do
         (segs, store) <- sample currentModel

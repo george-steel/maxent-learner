@@ -107,7 +107,7 @@ createLoadableGrammar transwin validsegs extreplace = do
             bpack loadButton
             bpack saveButton
 
-    txtfilter <- sync fileFilterNew
+    {-txtfilter <- sync fileFilterNew
     allfilter <- sync fileFilterNew
 
     sync $ do
@@ -115,11 +115,12 @@ createLoadableGrammar transwin validsegs extreplace = do
         fileFilterSetName txtfilter "Text Files"
         fileFilterAddPattern allfilter "*"
         fileFilterSetName allfilter "All Files"
+        -}
 
     loadDialog <- sync $ fileChooserDialogNew (Just "Load Grammar") transwin FileChooserActionOpen
         [("gtk-cancel", ResponseCancel), ("gtk-open", ResponseAccept)]
-    sync $ fileChooserAddFilter loadDialog txtfilter
-    sync $ fileChooserAddFilter loadDialog allfilter
+    --sync $ fileChooserAddFilter loadDialog txtfilter
+    --sync $ fileChooserAddFilter loadDialog allfilter
     flip callStream loadPressed $ \_ -> do
         filePicked <- runFileChooserDialog loadDialog
         planNow . ffor filePicked $ \case
@@ -135,8 +136,8 @@ createLoadableGrammar transwin validsegs extreplace = do
 
     saveDialog <- sync $ fileChooserDialogNew (Just "Save Grammar") transwin FileChooserActionSave
         [("gtk-cancel", ResponseCancel), ("gtk-save", ResponseAccept)]
-    sync $ fileChooserAddFilter saveDialog txtfilter
-    sync $ fileChooserAddFilter saveDialog allfilter
+    --sync $ fileChooserAddFilter saveDialog txtfilter
+    --sync $ fileChooserAddFilter saveDialog allfilter
     flip callStream savePressed $ \_  -> do
         mg <- sample currentGrammar
         case mg of

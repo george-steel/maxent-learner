@@ -126,18 +126,19 @@ createEditableLexicon transwin currentsegs extreplace = do
             [i] -> listStoreRemove store i
             _ -> return ()
 
-    txtfilter <- sync fileFilterNew
+    {- txtfilter <- sync fileFilterNew
     allfilter <- sync fileFilterNew
     sync $ do
         fileFilterAddMimeType txtfilter "text/*"
         fileFilterSetName txtfilter "Text Files"
         fileFilterAddPattern allfilter "*"
         fileFilterSetName allfilter "All Files"
+    -}
 
     saveDialog <- sync $ fileChooserDialogNew (Just "Save Lexicon") transwin FileChooserActionSave
         [("gtk-cancel", ResponseCancel), ("gtk-save", ResponseAccept)]
-    sync $ fileChooserAddFilter saveDialog txtfilter
-    sync $ fileChooserAddFilter saveDialog allfilter
+    --sync $ fileChooserAddFilter saveDialog txtfilter
+    --sync $ fileChooserAddFilter saveDialog allfilter
     flip callStream savePressed $ \_  -> do
         (_,segs,rows) <- sample currentLex
         savePicked <- runFileChooserDialog saveDialog
@@ -154,8 +155,8 @@ createEditableLexicon transwin currentsegs extreplace = do
 
     loadListDialog <- sync $ fileChooserDialogNew (Just "Load Lexicon") transwin FileChooserActionOpen
         [("gtk-cancel", ResponseCancel), ("gtk-open", ResponseAccept)]
-    sync $ fileChooserAddFilter loadListDialog txtfilter
-    sync $ fileChooserAddFilter loadListDialog allfilter
+    --sync $ fileChooserAddFilter loadListDialog txtfilter
+    --sync $ fileChooserAddFilter loadListDialog allfilter
     flip callStream loadListPressed $ \_ -> do
         filePicked <- runFileChooserDialog loadListDialog
         loaded <- planNow . ffor filePicked $ \case
@@ -178,8 +179,8 @@ createEditableLexicon transwin currentsegs extreplace = do
 
     loadTextDialog <- sync $ fileChooserDialogNew (Just "Load Text For New Lexicon") transwin FileChooserActionOpen
         [("gtk-cancel", ResponseCancel), ("gtk-open", ResponseAccept)]
-    sync $ fileChooserAddFilter loadTextDialog allfilter
-    sync $ fileChooserAddFilter loadTextDialog txtfilter
+    --sync $ fileChooserAddFilter loadTextDialog allfilter
+    --sync $ fileChooserAddFilter loadTextDialog txtfilter
     flip callStream loadTextPressed $ \_ -> do
         filePicked <- runFileChooserDialog loadTextDialog
         loaded <- planNow . ffor filePicked $ \case
