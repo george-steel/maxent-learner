@@ -1,4 +1,4 @@
-{-# LANGUAGE TypeOperators, RecursiveDo, ScopedTypeVariables, TemplateHaskell, QuasiQuotes, OverloadedStrings #-}
+{-# LANGUAGE TypeOperators, RecursiveDo, ScopedTypeVariables, TemplateHaskell, QuasiQuotes, OverloadedStrings, ExtendedDefaultRules #-}
 
 module Main where
 
@@ -28,10 +28,12 @@ import GrammarEditor
 import LearnerControls
 import System.IO
 
+default (T.Text)
+
 ipaft :: FeatureTable String
 ipaft = fromJust . csvToFeatureTable id . T.unpack . T.decodeUtf8 $ $(embedFile "app/ft-ipa.csv")
 
-css :: String
+css :: T.Text
 css = [r|
 #featuretable{
     background-color: @theme_base_color;
@@ -57,6 +59,7 @@ main = runNowGTK $ do
     -- example gtk app
     -- initialization code
     window <- sync $ windowNew
+    sync $ set window [windowTitle := "Hayes/Wilson Phonotactic Learner."]
 
     rec (fteditor, dynft) <- createEditableFT (Just window) ipaft
         (lexeditor, dynlex) <- createEditableLexicon (Just window) (fmap segsFromFt dynft) lexout
@@ -69,9 +72,9 @@ main = runNowGTK $ do
         thescreen <- widgetGetScreen window
         styleContextAddProviderForScreen thescreen sp 600
 
-        centerpanes <- set' [panedWideHandle := False] =<< createVPaned controls fteditor
-        rpanes <- set' [panedWideHandle := False] =<< createHPaned centerpanes grammareditor
-        lpanes <- set' [panedWideHandle := False] =<< createHPaned lexeditor rpanes
+        centerpanes <- set' [panedWideHandle := True] =<< createVPaned controls fteditor
+        rpanes <- set' [panedWideHandle := True] =<< createHPaned centerpanes grammareditor
+        lpanes <- set' [panedWideHandle := True] =<< createHPaned lexeditor rpanes
         box <- createVBox 0 $ do
             bstretch lpanes
             bpack =<< liftIO (vSeparatorNew)

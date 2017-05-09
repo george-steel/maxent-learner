@@ -1,5 +1,5 @@
 name:                maxent-learner-hw-gui
-version:             0.2.0
+version:             0.2.1
 synopsis:            GUI for maxent-learner-hw
 description:         This is a GUI frontent for maxent-learner-hw using GTK.
 homepage:            https://github.com/george-steel/maxent-learner
