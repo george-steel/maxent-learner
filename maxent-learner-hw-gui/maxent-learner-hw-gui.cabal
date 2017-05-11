@@ -22,7 +22,7 @@ executable phono-learner-hw-gui
                        LexiconEditor
   ghc-options:         -Wall -threaded -rtsopts -with-rtsopts=-N
   build-depends:       base >= 4.7 && < 5
-                     , maxent-learner-hw == 0.2.0
+                     , maxent-learner-hw == 0.2.1
                      , containers == 0.5.*
                      , text == 1.2.*
                      , file-embed

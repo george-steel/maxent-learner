@@ -140,7 +140,7 @@ runTextDialog transwin q defa = do
     ent <- sync $ entryNew
     sync $ do
         case transwin of
-            Just win -> set dia [windowTransientFor := win]
+            Just win -> set dia [windowTransientFor := win, windowModal := True]
             Nothing -> return ()
         dialogAddButton dia "gtk-ok" ResponseOk
         dialogAddButton dia "gtk-cancel" ResponseCancel
@@ -215,6 +215,7 @@ createEditableFT transwin initft = do
         [("gtk-cancel", ResponseCancel), ("gtk-open", ResponseAccept)]
     --sync $ fileChooserAddFilter loadDialog csvfilter
     --sync $ fileChooserAddFilter loadDialog allfilter
+    sync $ set loadDialog [windowModal := True]
     flip callStream loadPressed $ \_ -> do
         filePicked <- runFileChooserDialog loadDialog
         emft <- planNow . ffor filePicked $ \case
@@ -232,6 +233,7 @@ createEditableFT transwin initft = do
         [("gtk-cancel", ResponseCancel), ("gtk-save", ResponseAccept)]
     --sync $ fileChooserAddFilter saveDialog csvfilter
     --sync $ fileChooserAddFilter saveDialog allfilter
+    sync $ set saveDialog [windowModal := True]
     flip callStream savePressed $ \_  -> do
         savePicked <- runFileChooserDialog saveDialog
         planNow . ffor savePicked $ \case

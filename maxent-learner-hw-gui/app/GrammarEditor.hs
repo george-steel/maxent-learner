@@ -27,7 +27,7 @@ import Data.IORef
 import Numeric
 
 import qualified Graphics.Rendering.Cairo as C
-import Graphics.Rendering.Chart.Easy hiding (indices, set')
+import Graphics.Rendering.Chart.Easy hiding (indices, set', set)
 import Graphics.Rendering.Chart.Renderable
 import Graphics.Rendering.Chart.Geometry
 import Graphics.Rendering.Chart.Drawing
@@ -121,6 +121,7 @@ createLoadableGrammar transwin validsegs extreplace = do
         [("gtk-cancel", ResponseCancel), ("gtk-open", ResponseAccept)]
     --sync $ fileChooserAddFilter loadDialog txtfilter
     --sync $ fileChooserAddFilter loadDialog allfilter
+    sync $ set loadDialog [windowModal := True]
     flip callStream loadPressed $ \_ -> do
         filePicked <- runFileChooserDialog loadDialog
         planNow . ffor filePicked $ \case
@@ -138,6 +139,7 @@ createLoadableGrammar transwin validsegs extreplace = do
         [("gtk-cancel", ResponseCancel), ("gtk-save", ResponseAccept)]
     --sync $ fileChooserAddFilter saveDialog txtfilter
     --sync $ fileChooserAddFilter saveDialog allfilter
+    sync $ set saveDialog [windowModal := True]
     flip callStream savePressed $ \_  -> do
         mg <- sample currentGrammar
         case mg of

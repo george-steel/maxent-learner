@@ -30,6 +30,7 @@ import Data.Foldable
 import Data.Array.IArray
 import System.IO
 import Control.Exception
+import Control.Parallel
 
 
 stopsigint :: AsyncException -> IO ()
@@ -39,6 +40,13 @@ stopsigint e = case e of
         return ()
     _ -> throw e
 
+parzip :: [b] -> [a] -> [a]
+parzip _ [] = []
+parzip [] xs = xs
+parzip (y:ys) (x:xs) = (y `par` x):(parzip ys xs)
+
+parAhead :: Int -> [a] -> [a]
+parAhead n xs = parzip (drop n xs) xs
 {-|
 Infer a phonotactic grammar from a list of candidate constraints and a corpus of texts.
 
@@ -85,6 +93,9 @@ generateGrammarCB progresscb grammarcb samplesize thresholds candidates wfs = do
         lendist = lengthCdf lwfs
         lenarr = lengthFreqs lwfs
         pwfs = packMultiText cbound (wordFreqs lwfs)
+        violcand (cl,cdfa) = let o = fromIntegral $ transducePackedShort cdfa pwfs
+                             in o `seq` (cl,cdfa,o)
+        vcands = parAhead 16 (fmap violcand candidates)
 
     passctr :: IORef Int <- newIORef 0
     candctr :: IORef Int <- newIORef 0
@@ -111,17 +122,16 @@ generateGrammarCB progresscb grammarcb samplesize thresholds candidates wfs = do
             salad <- getStdRandom . runState $ sampleWordSalad (fmap (maxentProb weights) (unpackDFA dfa)) lendist samplesize
             evaluate . packMultiText cbound . wordFreqs . sortLexicon . fmap (\x -> (x,1)) $ salad
 
-        processcand :: Double -> (PackedText sigma, [clabel], MulticountDFST sigma, Vec) -> (clabel, ShortDFST sigma) -> IO (PackedText sigma, [clabel], MulticountDFST sigma, Vec)
-        processcand thresh grammar@(salad,rules,dfa,ws) (cl,cdfa) = do
+        processcand :: Double -> (PackedText sigma, [clabel], MulticountDFST sigma, Vec) -> (clabel, ShortDFST sigma, Int) -> IO (PackedText sigma, [clabel], MulticountDFST sigma, Vec)
+        processcand thresh grammar@(salad,rules,dfa,ws) (cl,cdfa,o) = do
             markcand
-            let o = fromIntegral $ transducePackedShort cdfa pwfs
-                o' = fromIntegral $ transducePackedShort cdfa salad
+            let o' = fromIntegral $ transducePackedShort cdfa salad
                 e = o' * fromIntegral (totalWords lwfs) / fromIntegral samplesize
-            score <- evaluate $ upperConfidenceOE o e
+            score <- evaluate $ upperConfidenceOE (fromIntegral o) e
             if score < thresh && cl `notElem` rules then do
                 markprg
                 hPutStrLn stderr ""
-                putStrLn $ "\nSelected Constraint " ++ show cl ++  " (score=" ++ showFFloat (Just 4) score [] ++ ", o=" ++ showFFloat (Just 1) o [] ++ ", e=" ++ showFFloat (Just 1) e [] ++ ")."
+                putStrLn $ "\nSelected Constraint " ++ show cl ++  " (score=" ++ showFFloat (Just 4) score [] ++ ", o=" ++ show o ++ ", e=" ++ showFFloat (Just 1) e [] ++ ")."
 
                 let rules' = cl:rules
                 dfa' <- evaluate . pruneAndPack $ rawIntersection consMC (unpackDFA cdfa) (unpackDFA dfa)
@@ -138,7 +148,7 @@ generateGrammarCB progresscb grammarcb samplesize thresholds candidates wfs = do
         processpass grammar thresh = do
             markpass
             putStrLn $ "\n\n\nStarting pass with threshold " ++ showFFloat (Just 3) thresh ""
-            foldlM (processcand thresh) grammar candidates
+            foldlM (processcand thresh) grammar vcands
 
     initsalad <- genSalad blankdfa zero
     let initgrammar = (initsalad,[],blankdfa,zero)

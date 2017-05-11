@@ -139,6 +139,7 @@ createEditableLexicon transwin currentsegs extreplace = do
         [("gtk-cancel", ResponseCancel), ("gtk-save", ResponseAccept)]
     --sync $ fileChooserAddFilter saveDialog txtfilter
     --sync $ fileChooserAddFilter saveDialog allfilter
+    sync $ set saveDialog [windowModal := True]
     flip callStream savePressed $ \_  -> do
         (_,segs,rows) <- sample currentLex
         savePicked <- runFileChooserDialog saveDialog
@@ -157,6 +158,7 @@ createEditableLexicon transwin currentsegs extreplace = do
         [("gtk-cancel", ResponseCancel), ("gtk-open", ResponseAccept)]
     --sync $ fileChooserAddFilter loadListDialog txtfilter
     --sync $ fileChooserAddFilter loadListDialog allfilter
+    sync $ set loadListDialog [windowModal := True]
     flip callStream loadListPressed $ \_ -> do
         filePicked <- runFileChooserDialog loadListDialog
         loaded <- planNow . ffor filePicked $ \case
@@ -181,6 +183,7 @@ createEditableLexicon transwin currentsegs extreplace = do
         [("gtk-cancel", ResponseCancel), ("gtk-open", ResponseAccept)]
     --sync $ fileChooserAddFilter loadTextDialog allfilter
     --sync $ fileChooserAddFilter loadTextDialog txtfilter
+    sync $ set loadTextDialog [windowModal := True]
     flip callStream loadTextPressed $ \_ -> do
         filePicked <- runFileChooserDialog loadTextDialog
         loaded <- planNow . ffor filePicked $ \case
