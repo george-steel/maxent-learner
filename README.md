@@ -13,14 +13,14 @@ GTK can be installed by using the jhbuild tool on the [GTK website](https://www.
     curl http://git.gnome.org/browse/gtk-osx/plain/gtk-osx-build-setup.sh -o gtk-osx-build-setup.sh
     chmod +x gtk-osx-build-setup.sh
     ./gtk-osx-build-setup.sh
-    jhbuild bootstrap
+    jhbuild bootstrap
     jhbuild build meta-gtk-osx-bootstrap meta-gtk-osx-gtk3
 
 Once GTK is installed, enter the GTK environment with the command `jhbuild shell`. Once inside the shell, navigate to this repository and run the following commands to build and package the app.
 
     stack build
-    stack install
-    cd osx-bundle
+    stack install
+    cd osx-bundle/
     gtk-mac-bundler learner.bundle
 
 This will place the command line executable in `~/.local/bin` and create an app bundle in your Desktop folder. If this is your first run and stack complains about missing programs, run the following commands before attempting to build again.
