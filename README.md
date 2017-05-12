@@ -4,29 +4,32 @@ A tool for automatically inferring phonotactic grammars from a lexicon and using
 
 To compile this package, run `stack build` in the root of this repository (for just the command line tool, run `stack build maxent-learner-hw`). Compiling the GUI requires GTK3 to be installed (on windows use `pacman` in the msys2 environment that comes with stack) and if initializing a new stack snapshot, will you will need to run `stack install ghc2hs-buildtools` before compilation of all dependencies can succeed.
 
-### OSX build instructions
+Both the [main package](http://hackage.haskell.org/package/maxent-learner-hw) and [GUI package](http://hackage.haskell.org/package/maxent-learner-hw-gui) are also available on Hackage.
 
-GTK can be installed by using the jhbuild tool on the [GTK website](https://www.gtk.org/download/macos.php). For a quick install, run the following terminal commands :
+## Lexicon format
 
-    cd ~
-    export PATH=~/.local/bin:$PATH
-    curl http://git.gnome.org/browse/gtk-osx/plain/gtk-osx-build-setup.sh -o gtk-osx-build-setup.sh
-    chmod +x gtk-osx-build-setup.sh
-    ./gtk-osx-build-setup.sh
-    jhbuild bootstrap
-    jhbuild build meta-gtk-osx-bootstrap meta-gtk-osx-gtk3
+If the collate option is used, raw phonetic text may be used, where whitespace separates words and punctuation is ignored (although it will separate segments if multi-character segments are defined). If the option is not used, words must be on their own lines and whitespace is ignored (but may be used to separate segments). Each word may optionally be followed by a tab character and an integer indicating its frequency.
 
-Once GTK is installed, enter the GTK environment with the command `jhbuild shell`. Once inside the shell, navigate to this repository and run the following commands to build and package the app.
+## Grammar format
 
-    stack build
-    stack install
-    cd osx-bundle/
-    gtk-mac-bundler learner.bundle
+As these are auto-generated, they should not need to be edited manually.
 
-This will place the command line executable in `~/.local/bin` and create an app bundle in your Desktop folder. If this is your first run and stack complains about missing programs, run the following commands before attempting to build again.
+Blank lines ans lines beginning with # are ignored.
+The first regular line must contain a length distribution (a list of (Length,Int) pairs).
+Subsequent lines contain a weight and a rule separated by a space. Rules are represented as a sequence of classes with `+` and `*` for repetition, `¬` for inversion, and `#` to indicate the presence of a word boundary.
 
-    stack setup
-    stack install gtk2hs-buildtools
+
+## Feature Table Format
+
+To use a feature table other than the default IPA one, you may define it in CSV format (RFC 4180). The segment names are defined by the first row (they may be any strings as long as they are all distinct, i.e. no duplicate names) and the feature names are defined by the first column (they are not hard-coded). Data cells should contain `+`, `-`, or `0` for binary features and `+` or `0` for privative features (where we do not want a minus set that could form classes).
+
+As a simple example, consider the following CSV file, defining three segments (a, n, and t), and two features (vowel and nasal).
+
+         ,a,n,t
+    vowel,+,-,-
+    nasal,0,+,-
+
+If a row contains a different number of cells (separated by commas) than the header line, is rejected as invalid and does not define a feature (and will not be displayed in the formatted feature table). If the CSV which is entered has duplicate segment names, no segments, or no valid features, the entire table is rejected (indicated by a red border around the text area, green is normal) and the last valid table is used and displayed.
 
 
 ## Command line usage
@@ -48,7 +51,7 @@ The command line works as follows:
 
 | Option                            | Description |
 | ---                               | --- |
-| -f, --freqs                       | Lexicon file contains word frequencies. |
+| -c, --collate                     | Lexicon file contains raw text with words separated by whitespace. |
 | --thresholds *THRESHOLDS*         | Thresholds to use for candidate selection (default is `[0.01, 0.1, 0.2, 0.3]`). |
 | -e, --edges                       | Allow single classes and bigrams restricted to word boundaries. |
 | -3, --trigrams *COREFEATURES*     | Allows trigrams as long as at least one class is [] or [±x] where x is in *COREFEATURES* (space separated in quotes). |
@@ -69,31 +72,32 @@ The following two command calculates a grammar using Hayes and Wilson's Shona te
     phono-learner-hw learn ShonaLearningData.txt -f -e -3 "syllabic consonantal sonorant" -t ShonaFeatures.csv -w -o shonalongdistance.txt
     phono-learner-hw gensalad ShonaGrammar.txt -t ShonaFeatures.csv -w -o ShonaSalad.txt
 
+## OSX build instructions
 
-## Lexicon format
+GTK can be installed by using the jhbuild tool on the [GTK website](https://www.gtk.org/download/macos.php). For a quick install, run the following terminal commands :
 
-If the collate option is used, raw phonetic text may be used, where whitespace separates words and punctuation is ignored (although it will separate segments if multi-character segments are defined). If the option is not used, words must be on their own lines and whitespace is ignored (but may be used to separate segments). Each word may optionally be followed by a tab character and an integer indicating its frequency.
+    cd ~
+    export PATH=~/.local/bin:$PATH
+    curl http://git.gnome.org/browse/gtk-osx/plain/gtk-osx-build-setup.sh -o gtk-osx-build-setup.sh
+    chmod +x gtk-osx-build-setup.sh
+    ./gtk-osx-build-setup.sh
+    jhbuild bootstrap
+    jhbuild build meta-gtk-osx-bootstrap meta-gtk-osx-gtk3
+    git clone git://git.gnome.org/gtk-mac-bundler
+    cd gtk-mac-bundler
+    make install
 
-## Grammar format
+Once GTK is installed, enter the GTK environment with the command `jhbuild shell`. Once inside the shell, navigate to this repository and run the following commands to build and package the app.
 
-As these are auto-generated, they should not need to be edited manually.
+    stack build
+    stack install
+    cd osx-bundle/
+    gtk-mac-bundler learner.bundle
 
-Blank lines ans lines begining with # are ignored.
-The first regular line must contain a length distribution (a list of (Length,Int) pairs).
-Subsequent lines contain a weight and a rule separated by a space. Rules are reperesented as a sequence of classes with `+` and `*` for repetition, `¬` for inversion, and `#` to indicate the presence of a word boundary.
+This will place the command line executable in `~/.local/bin` and create an app bundle in your Desktop folder. If this is your first run and stack complains about missing programs, run the following commands before attempting to build again.
 
-
-## Feature Table Format
-
-To use a feature table other than the default IPA one, you may define it in CSV format (RFC 4180). The segment names are defined by the first row (they may be any strings as long as they are all distinct, i.e. no duplicate names) and the feature names are defined by the first column (they are not hard-coded). Data cells should contain `+`, `-`, or `0` for binary features and `+` or `0` for privative features (where we do not want a minus set that could form classes).
-
-As a simple example, consider the following CSV file, defining three segments (a, n, and t), and two features (vowel and nasal).
-
-         ,a,n,t
-    vowel,+,-,-
-    nasal,0,+,-
-
-If a row contains a different number of cells (separated by commas) than the header line, is rejected as invalid and does not define a feature (and will not be dispayed in the formatted feature table). If the CSV which is entered has duplicate segment names, no segments, or no valid features, the entire table is rejected (indicated by a red border around the text area, green is normal) and the last valid table is used and displayed.
+    stack setup
+    stack install gtk2hs-buildtools
 
 ---
 
