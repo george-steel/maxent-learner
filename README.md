@@ -4,7 +4,7 @@ A tool for automatically inferring phonotactic grammars from a lexicon and using
 
 To compile this package, run `stack build` in the root of this repository (for just the command line tool, run `stack build maxent-learner-hw`). Compiling the GUI requires GTK3 to be installed (on windows use `pacman` in the msys2 environment that comes with stack) and if initializing a new stack snapshot, will you will need to run `stack install ghc2hs-buildtools` before compilation of all dependencies can succeed.
 
-Both the [main package](http://hackage.haskell.org/package/maxent-learner-hw) and [GUI package](http://hackage.haskell.org/package/maxent-learner-hw-gui) are also available on Hackage.
+Both the [main package](http://hackage.haskell.org/package/maxent-learner-hw) and [GUI package](http://hackage.haskell.org/package/maxent-learner-hw-gui) are also available on Hackage. Precompiled binaries for Windows and OSX are available on the Releases section on Github.
 
 ## Lexicon format
 
